@@ -417,7 +417,7 @@ function renderConnSelect() {
     frag.appendChild(none);
     for (const c of conns) {
         const opt = document.createElement('option');
-        opt.value = c.id; opt.textContent = `${c.name || '(未命名)'} · ${FORMATS[c.format]?.label || c.format}`;
+        opt.value = c.id; opt.textContent = c.name || '(未命名)';
         frag.appendChild(opt);
     }
     $sel.empty().append(frag);
@@ -499,13 +499,8 @@ function renderModelSelect(conn) {
 }
 
 function updateEndpointHint(conn) {
-    const $hint = $('#cxh_endpoint_hint');
-    if (!conn || !String(conn.endpoint || '').trim()) { $hint.text(''); return; }
-    const format = conn.format === 'claude' ? 'claude' : 'openai';
-    const fmt = FORMATS[format];
-    const norm = fmt.normalizeEndpoint(conn.endpoint);
-    if (!norm.url) { $hint.text(''); return; }
-    $hint.text(`实际请求 → ${norm.url}${fmt.generateUrlSuffix}`);
+    // 按用户要求：不展示接口后缀/实际请求提示，保持界面干净
+    $('#cxh_endpoint_hint').text('');
 }
 
 function collectFromEditor() {
@@ -599,12 +594,23 @@ async function sendTestMessage(conn) {
     const text = await resp.text().catch(() => '');
     if (!resp.ok) throw new Error(`HTTP ${resp.status}：${text.slice(0, 200)}`);
     let reply = '';
+    let thinking = '';
     try {
         const data = JSON.parse(text);
-        reply = data?.choices?.[0]?.message?.content       // OAI
-            ?? data?.content?.[0]?.text                     // Claude
-            ?? '';
+        // OAI 格式正文
+        reply = data?.choices?.[0]?.message?.content ?? '';
+        // Claude 格式：content 是块数组，thinking 块可能排在 text 块前面，需按类型提取
+        if (!reply && Array.isArray(data?.content)) {
+            reply = data.content.filter(b => b?.type === 'text').map(b => b.text).join('');
+            thinking = data.content.filter(b => b?.type === 'thinking').map(b => b.thinking).join('');
+        }
+        // OAI 变体：部分中转把思考放 reasoning_content
+        if (!reply && !thinking) {
+            thinking = data?.choices?.[0]?.message?.reasoning_content || '';
+        }
     } catch { /* 非 JSON 响应 */ }
+    // 思考型模型 max_tokens 全被 thinking 吃掉属正常 —— HTTP 200 + 有 thinking 即视为连接成功
+    if (!reply && thinking) return `[思考] ${thinking.slice(0, 80)}`;
     if (!reply) throw new Error(`响应异常：${text.slice(0, 200) || '(空)'}`);
     return reply;
 }
