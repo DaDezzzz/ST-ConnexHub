@@ -53,4 +53,3 @@ git clone https://github.com/<your-name>/ST-ConnexHub
 - [x] 首次安装初始化两种格式示例
 - [x] 卸载清理 hook
 - [ ] 导入 / 导出
-- [ ] 预设联动（API Hub 模式）

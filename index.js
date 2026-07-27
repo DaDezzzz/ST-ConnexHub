@@ -11,40 +11,25 @@
  *     / custom_include_body / custom_exclude_body / custom_include_headers），
  *     不重写一套请求体组装——保证与上游 SillyTavern 的协议处理（tool calling、
  *     reasoning、json_schema、prompt post-processing 等）100% 一致。
- *  4. Claude 格式：使用 generate_data 中已有的 reverse_proxy + proxy_password 通道
- *     之外完全不沾原生气——直接在 GENERATION_ENDED 之前由 ConnexHub 自有后端通道？
- *     不行：酒馆后端只支持两种 source。
- *     -> 采用「前端先把消息和附加参数组装成 Claude 协议体，再走 SillyTavern 后端
- *        /api/backends/chat-completions/generate 的 CLAUDE 分支（该分支完全独立于
- *        oai_settings，已自动按 Claude 协议重写 body）」。
- *     我们要做的：把端点和密钥注入到 generateData.proxy_password（仅在 generateData
- *     已确定走 CLAUDE 分支的前提下），把附加参数通过 chat-completion 协议体携带。
- *     实际不可行（ST 后端会拿 oai_settings 做 schema）。
- *     -> 退一步：把活动 Claude 连接的端点 + key 注入到 generateData 的
- *     `reverse_proxy` / `proxy_password` 字段，触发 ST 原生 CLAUDE 路由；OAI 走
- *     `custom_url` + `secret_id` 但密钥我们写进自有命名空间，不调用 ST 写密钥接口。
- *     但是 ST 后端 Claude 分支会调用 SECRET_KEYS.CLAUDE 读密钥…
- *     -> 务实方案：调用 ST 原生 `writeSecret(SECRET_KEYS.CLAUDE)` 把密钥写入酒馆
- *     命名密钥库（不污染 oai_settings 任何字段），然后在 generateData 上设
- *     reverse_proxy + proxy_password + model。卸载时再把这些 secret 删掉。
- *     「数据独立」仍然成立：oai_settings 上不写任何字段；密钥库的 SECRET_KEYS.CLAUDE
- *     槽是 ConnexHub 活动连接专用，不影响用户自己管理的密钥条目（uninstall 时
- *     ConnexHub 只删自己创建或激活的条目，按"label 包含 ConnexHub 标记"识别）。
+ *     API Key 通过 custom_include_headers 注入 Authorization 头，完全不写 ST 密钥库。
+ *  4. Claude 格式：走 ST 原生 CLAUDE 分支的 reverse_proxy + proxy_password 通道。
+ *     ST 后端 sendClaudeRequest 的密钥逻辑是：
+ *       apiKey = request.body.reverse_proxy ? request.body.proxy_password : readSecret(CLAUDE)
+ *     因此设置 reverse_proxy 后密钥由 proxy_password 逐请求透传，
+ *     同样完全不写 ST 密钥库、不碰任何原生数据。
  *
  * 关键约束（实战派）：
- *  - 卸载清理：遍历 connections、secret_state[CLAUDE]，按 label 标记删除
- *    ConnexHub 写入的条目 + 删 extension_settings.connexHub。
+ *  - 卸载清理：删 extension_settings.connexHub 命名空间；防御性扫描并清理
+ *    历史版本可能遗留的 ConnexHub 标记密钥条目。
  *  - 性能：所有 DOM 事件用 document 委托（DOM 重建不失效）；模型下拉用 DocumentFragment
- *    一次性 append；状态渲染走 DocumentFragment + 单次 DOM 插入。
+ *    一次性 append。
  *  - 状态隔离：每个连接字段缺失都做兜底，避免「半配置」崩溃。
  */
 
 import { extension_settings, renderExtensionTemplateAsync } from '../../../extensions.js';
 import { chat_completion_sources, oai_settings } from '../../../openai.js';
 import { saveSettingsDebounced, getRequestHeaders, eventSource, event_types, main_api } from '../../../../script.js';
-import { SECRET_KEYS, writeSecret, deleteSecret, secret_state } from '../../../secrets.js';
-import { callGenericPopup, POPUP_TYPE } from '../../../popup.js';
-import { copyText } from '../../../utils.js';
+import { SECRET_KEYS, deleteSecret, secret_state } from '../../../secrets.js';
 
 const LOG = '[ConnexHub]';
 const NS = 'connexHub';
@@ -189,22 +174,16 @@ function applyActiveConnection(generateData) {
                 if (k && k in generateData) delete generateData[k];
             }
         } else {
-            // Claude 格式
+            // Claude 格式 —— 完全独立密钥方案：
+            // ST 后端 sendClaudeRequest 的密钥逻辑是
+            //   apiKey = request.body.reverse_proxy ? request.body.proxy_password : readSecret(CLAUDE)
+            // 因此只要设置 reverse_proxy，密钥直接由 proxy_password 透传，
+            // 完全不写入酒馆密钥库，不碰任何原生数据。
             generateData.reverse_proxy = normalized.url;
-            generateData.claude_model = model;
+            generateData.proxy_password = conn.apiKey || '';
             if (model) generateData.model = model;
-            // Claude 格式走 ST 原生 CLAUDE 分支需要密钥走 SECRET_KEYS.CLAUDE
-            // —— 我们不污染用户密钥库，而是通过 x-api-key 附加头注入（x-api-key 是 Claude
-            // 官方头名，但 ST 后端 CLAUDE 分支会自己加 Authorization 头）。
-            // 实际：ST 的 sendClaudeRequest 只读 readSecret(CLAUDE, secret_id)，不支持从
-            // generateData 透传密钥。所以 Claude 格式必须把密钥临时写入 SECRET_KEYS.CLAUDE
-            // 槽里"ConnexHub 标记"的条目，卸载时清掉。
-            if (conn.apiKey) {
-                const sid = ensureConnexHubSecret(conn);
-                if (sid) generateData.secret_id = sid;
-            }
             if (conn.includeBody?.trim()) {
-                // 只把白名单字段注入；其它走 generateData 顶层会引发后端忽略
+                // 只把白名单字段注入；其它字段 ST 后端 Claude 分支不读取
                 const obj = parseYamlObject(conn.includeBody);
                 for (const [k, v] of Object.entries(obj)) {
                     if (CLAUDE_ALLOWED_EXTRA_BODY.has(k)) generateData[k] = v;
@@ -253,42 +232,6 @@ function mergeYamlHeaders(existingYaml, extra) {
 function formatScalar(v) {
     if (typeof v === 'string' && /[\s:#]/.test(v)) return `"${v.replace(/"/g, '\\"')}"`;
     return String(v);
-}
-
-// ── Claude 密钥借用酒馆密钥库（不污染 oai_settings） ─────────────
-
-/** 每个连接复用一条带 ConnexHub 标记的密钥条目；连接 id 编码进 label 便于卸载清 */
-async function ensureConnexHubSecret(conn) {
-    try {
-        const list = Array.isArray(secret_state[SECRET_KEYS.CLAUDE]) ? secret_state[SECRET_KEYS.CLAUDE] : [];
-        const label = `${SECRET_LABEL_TAG}/${conn.id.slice(0, 12)}`;
-        // 已有就原地 rotate
-        const existing = list.find(s => s.label === label);
-        if (existing) {
-            await writeSecret(SECRET_KEYS.CLAUDE, conn.apiKey, label, { allowEmpty: true });
-            // 重写后 id 不变（rotateSecret 走同名路径）；确保 active 指向它
-            await makeSecretActive(SECRET_KEYS.CLAUDE, existing.id);
-            return existing.id;
-        }
-        // 新建
-        const newId = await writeSecret(SECRET_KEYS.CLAUDE, conn.apiKey, label, { allowEmpty: true });
-        if (newId) await makeSecretActive(SECRET_KEYS.CLAUDE, newId);
-        return newId;
-    } catch (err) {
-        console.error(`${LOG} ensureConnexHubSecret failed`, err);
-        return null;
-    }
-}
-
-async function makeSecretActive(key, id) {
-    // 走与 ST 原生一致的"置为 active"流程：rotateSecret / 直接改 secret_state + 保存
-    // 简化：复用酒馆原生的 rotateSecret
-    try {
-        const { rotateSecret } = await import('../../../secrets.js');
-        await rotateSecret(key, id);
-    } catch (err) {
-        console.warn(`${LOG} rotateSecret failed`, err);
-    }
 }
 
 // ── 活动连接 source 注入（仅在用户主动激活时改 source + 切到 ST 原生 source） ─
