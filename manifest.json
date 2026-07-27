@@ -1,0 +1,16 @@
+{
+    "display_name": "ConnexHub",
+    "loading_order": 100,
+    "requires": [],
+    "optional": [],
+    "js": "index.js",
+    "css": "style.css",
+    "author": "waylon256yhw",
+    "version": "1.0.0",
+    "homePage": "",
+    "auto_update": false,
+    "hooks": {
+        "clean": "cleanupPluginData",
+        "delete": "cleanupPluginData"
+    }
+}

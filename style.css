@@ -1,0 +1,61 @@
+/* ConnexHub — 扩展面板样式（与酒馆原生风格一致） */
+
+.connexhub-settings {
+    margin: 8px 0;
+    padding: 8px;
+}
+
+.cxh-row {
+    display: flex;
+    gap: 6px;
+    align-items: center;
+    margin: 6px 0;
+}
+
+.cxh-row.flex1 > .flex1,
+.cxh-row .flex1 {
+    flex: 1 1 auto;
+    min-width: 0;
+}
+
+.cxh-label {
+    display: block;
+    margin: 8px 0 4px;
+    font-size: 0.9em;
+    opacity: 0.85;
+}
+
+.cxh-mono {
+    font-family: var(--monoFontFamily, monospace);
+    font-size: 0.9em;
+}
+
+.cxh-hint {
+    display: block;
+    color: var(--SmartThemeBodyColor, #888);
+    font-size: 0.8em;
+    margin: 4px 0 6px;
+    opacity: 0.75;
+}
+
+.cxh-actions {
+    margin-top: 10px;
+}
+
+.cxh-status {
+    margin-top: 6px;
+    font-size: 0.85em;
+    padding: 4px 8px;
+    border-radius: 4px;
+    min-height: 1.2em;
+}
+.cxh-status[data-kind="ok"] { background: rgba(40, 167, 69, 0.15); color: #2a8a3a; }
+.cxh-status[data-kind="err"] { background: rgba(220, 53, 69, 0.15); color: #b3283a; }
+.cxh-status[data-kind="info"] { background: rgba(108, 117, 125, 0.15); color: #6c757d; }
+
+.cxh-sub-drawer {
+    margin: 8px 0;
+    border: 1px solid rgba(128, 128, 128, 0.2);
+    border-radius: 4px;
+    padding: 4px 8px;
+}
