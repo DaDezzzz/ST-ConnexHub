@@ -41,11 +41,11 @@ const FORMATS = {
         label: 'OpenAI 兼容',
         modelUrlSuffix: '/models',
         generateUrlSuffix: '/chat/completions',
-        /** 端点归一化：若未以 /v1 结尾则补（用户可写 # 后缀关闭） */
+        /** 端点归一化：若未以 /v数字 结尾则补 /v1（用户可写 # 后缀关闭补全） */
         normalizeEndpoint(ep) {
             let raw = String(ep || '').trim().replace(/\/+$/, '');
             if (raw.endsWith('#')) return { url: raw.slice(0, -1).replace(/\/+$/, ''), raw: true };
-            if (!/\/v\d+$/.test(raw)) raw = raw + '/v1';
+            if (raw && !/\/v\d+$/.test(raw)) raw = raw + '/v1';
             return { url: raw, raw: false };
         },
     },
@@ -348,37 +348,76 @@ export async function cleanupPluginData() {
     }
 }
 
-// ── 模型拉取 ──────────────────────────────────────────────────
+// ── 模型拉取（走酒馆后端代理，避免浏览器 CORS 拦截） ─────────────
 
 async function fetchModels(conn) {
     const fmt = FORMATS[conn.format];
     if (!fmt) throw new Error('未知格式');
     const norm = fmt.normalizeEndpoint(conn.endpoint);
     if (!norm.url) throw new Error('请先填写端点 URL');
-    if (!conn.apiKey) throw new Error('请先填写 API Key');
 
+    let list = [];
+    try {
+        list = await fetchModelsViaBackend(conn, norm.url);
+    } catch (backendErr) {
+        console.warn(`${LOG} 后端代理拉取失败，尝试直连`, backendErr);
+        list = await fetchModelsDirect(conn, norm.url, fmt);
+    }
+    conn.availableModels = list;
+    conn.lastFetched = Date.now();
+    saveSettingsDebounced();
+    return list;
+}
+
+/** 首选：通过 ST 后端 /status 通道拉模型（服务器发起请求，无 CORS 问题） */
+async function fetchModelsViaBackend(conn, baseUrl) {
+    const body = conn.format === 'claude'
+        ? {
+            chat_completion_source: chat_completion_sources.CLAUDE,
+            reverse_proxy: baseUrl,
+            proxy_password: conn.apiKey || '',
+        }
+        : {
+            chat_completion_source: chat_completion_sources.CUSTOM,
+            custom_url: baseUrl,
+            custom_include_headers: conn.apiKey ? `Authorization: Bearer ${conn.apiKey}` : '',
+        };
+    const resp = await fetch('/api/backends/chat-completions/status', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify(body),
+    });
+    if (!resp.ok) {
+        const text = await resp.text().catch(() => '');
+        throw new Error(`HTTP ${resp.status}：${text.slice(0, 200)}`);
+    }
+    const data = await resp.json();
+    const models = Array.isArray(data?.data) ? data.data : Array.isArray(data?.models) ? data.models : [];
+    const list = models.map(m => ({ id: m.id || m.name || m })).filter(m => m.id);
+    if (!list.length) throw new Error('后端未返回模型列表');
+    return list;
+}
+
+/** 兜底：浏览器直连（部分中转站允许 CORS） */
+async function fetchModelsDirect(conn, baseUrl, fmt) {
+    if (!conn.apiKey) throw new Error('请先填写 API Key');
     const headers = { 'Accept': 'application/json' };
     if (conn.format === 'claude') {
         headers['x-api-key'] = conn.apiKey;
         headers['anthropic-version'] = '2023-06-01';
+        headers['anthropic-dangerous-direct-browser-access'] = 'true';
     } else {
         headers['Authorization'] = `Bearer ${conn.apiKey}`;
     }
-
-    const url = norm.url.replace(/\/+$/, '') + fmt.modelUrlSuffix;
+    const url = baseUrl.replace(/\/+$/, '') + fmt.modelUrlSuffix;
     const resp = await fetch(url, { method: 'GET', headers });
     if (!resp.ok) {
         const text = await resp.text().catch(() => '');
         throw new Error(`HTTP ${resp.status}：${text.slice(0, 200)}`);
     }
     const data = await resp.json();
-    // 标准化为 [{id}] 列表
     const models = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
-    const list = models.map(m => ({ id: m.id || m.name || m })).filter(m => m.id);
-    conn.availableModels = list;
-    conn.lastFetched = Date.now();
-    saveSettingsDebounced();
-    return list;
+    return models.map(m => ({ id: m.id || m.name || m })).filter(m => m.id);
 }
 
 // ── UI 渲染 ──────────────────────────────────────────────────
@@ -415,6 +454,8 @@ function fillEditor(conn) {
         $('#cxh_editor input, #cxh_editor textarea').val('');
         $('#cxh_format').val('openai');
         renderModelSelect(null);
+        renderExcludeChecks(null);
+        updateEndpointHint(null);
         return;
     }
     $('#cxh_name').val(conn.name);
@@ -483,10 +524,13 @@ function renderModelSelect(conn) {
 }
 
 function updateEndpointHint(conn) {
-    const fmt = FORMATS[conn?.format || 'openai'];
-    if (!conn) { $('#cxh_endpoint_hint').text(''); return; }
+    const $hint = $('#cxh_endpoint_hint');
+    if (!conn || !String(conn.endpoint || '').trim()) { $hint.text(''); return; }
+    const format = conn.format === 'claude' ? 'claude' : 'openai';
+    const fmt = FORMATS[format];
     const norm = fmt.normalizeEndpoint(conn.endpoint);
-    $('#cxh_endpoint_hint').text(norm.url ? `实际请求：${norm.url}` : '');
+    if (!norm.url) { $hint.text(''); return; }
+    $hint.text(`实际请求 → ${norm.url}${fmt.generateUrlSuffix}`);
 }
 
 function collectFromEditor() {
@@ -511,25 +555,56 @@ function setStatus(text, kind = 'info') {
 
 // ── 事件绑定（全部 document 委托） ────────────────────────────
 
+/** 从编辑器构造一个「临时连接」对象（未保存也能拉模型/测试） */
+function draftConn() {
+    const id = $('#cxh_conn_select').val();
+    const base = getConn(id) || DEFAULT_CONNECTION();
+    return { ...base, ...collectFromEditor() };
+}
+
+/** 保存逻辑：已选中则更新；未选中（新建草稿）则创建。返回保存后的连接或 null */
+function saveFromEditor() {
+    const data = collectFromEditor();
+    if (!data.name) {
+        setStatus('请填写连接名称后再保存', 'err');
+        toastr.warning('连接名称不能为空', LOG);
+        $('#cxh_name').trigger('focus');
+        return null;
+    }
+    const id = $('#cxh_conn_select').val();
+    let conn = getConn(id);
+    if (!conn) {
+        conn = DEFAULT_CONNECTION();
+        getConnections().push(conn);
+    }
+    Object.assign(conn, data);
+    saveSettingsDebounced();
+    renderConnSelect();
+    $('#cxh_conn_select').val(conn.id);
+    renderActiveHint();
+    updateEndpointHint(conn);
+    return conn;
+}
+
 function bindEvents() {
     $(document).on('change.cxh', '#cxh_conn_select', function () {
         fillEditor(getConn($(this).val()));
     });
     $(document).on('click.cxh', '#cxh_btn_activate', function () {
-        const id = $('#cxh_conn_select').val();
-        if (id) activateConnection(id);
+        const conn = saveFromEditor();
+        if (conn) activateConnection(conn.id);
     });
     $(document).on('click.cxh', '#cxh_btn_new', function () {
-        const c = DEFAULT_CONNECTION();
-        getConnections().push(c);
-        saveSettingsDebounced();
-        renderConnSelect();
-        $('#cxh_conn_select').val(c.id).trigger('change');
+        // 真正全空草稿：不立即入库，点保存才创建
+        $('#cxh_conn_select').val('');
+        fillEditor(null);
+        setStatus('新建连接：填写后点保存', 'info');
+        $('#cxh_name').trigger('focus');
     });
     $(document).on('click.cxh', '#cxh_btn_dup', function () {
         const id = $('#cxh_conn_select').val();
         const src = getConn(id);
-        if (!src) return;
+        if (!src) { setStatus('请先选择要复制的连接', 'err'); return; }
         const dup = { ...structuredClone(src), id: DEFAULT_CONNECTION().id, name: `${src.name || '(未命名)'} 副本`, lastFetched: 0 };
         getConnections().push(dup);
         saveSettingsDebounced();
@@ -538,7 +613,7 @@ function bindEvents() {
     });
     $(document).on('click.cxh', '#cxh_btn_del', function () {
         const id = $('#cxh_conn_select').val();
-        if (!id) return;
+        if (!id) { setStatus('请先选择要删除的连接', 'err'); return; }
         const idx = getConnections().findIndex(c => c.id === id);
         if (idx < 0) return;
         getConnections().splice(idx, 1);
@@ -546,11 +621,12 @@ function bindEvents() {
         saveSettingsDebounced();
         renderConnSelect();
         fillEditor(null);
+        renderActiveHint();
+        setStatus('已删除', 'ok');
     });
+    // 端点/格式变化 → 实时刷新「实际请求」提示（草稿也生效）
     $(document).on('input.cxh change.cxh', '#cxh_endpoint, #cxh_format', function () {
-        const id = $('#cxh_conn_select').val();
-        const conn = getConn(id);
-        if (conn) updateEndpointHint({ ...conn, format: $('#cxh_format').val() });
+        updateEndpointHint({ endpoint: $('#cxh_endpoint').val(), format: $('#cxh_format').val() });
     });
     // 切换格式时重渲染勾选组（两种格式选项不同；保留已保存的勾选交集）
     $(document).on('change.cxh', '#cxh_format', function () {
@@ -562,39 +638,44 @@ function bindEvents() {
         $i.attr('type', $i.attr('type') === 'password' ? 'text' : 'password');
     });
     $(document).on('click.cxh', '#cxh_btn_save', function () {
-        const id = $('#cxh_conn_select').val();
-        const conn = getConn(id);
-        if (!conn) return;
-        Object.assign(conn, collectFromEditor());
-        saveSettingsDebounced();
-        renderConnSelect();
-        setStatus('已保存', 'ok');
+        const conn = saveFromEditor();
+        if (conn) {
+            setStatus(`已保存：${conn.name}`, 'ok');
+            toastr.success(`已保存：${conn.name}`, LOG);
+        }
     });
     $(document).on('click.cxh', '#cxh_btn_fetch_models', async function () {
-        const id = $('#cxh_conn_select').val();
-        const conn = getConn(id);
-        if (!conn) return;
-        Object.assign(conn, collectFromEditor());
-        setStatus('拉取中…');
+        const $icon = $(this).find('i');
+        const conn = draftConn();
+        if (!String(conn.endpoint || '').trim()) { setStatus('请先填写端点 URL', 'err'); return; }
+        setStatus('获取模型中…');
+        $icon.addClass('fa-spin');
         try {
             const list = await fetchModels(conn);
-            renderModelSelect(conn);
-            setStatus(`已拉到 ${list.length} 个模型`, 'ok');
+            // 若该草稿对应已保存连接，同步模型列表
+            const saved = getConn($('#cxh_conn_select').val());
+            if (saved) { saved.availableModels = list; saved.lastFetched = Date.now(); saveSettingsDebounced(); }
+            renderModelSelect({ ...conn, availableModels: list });
+            setStatus(`已获取 ${list.length} 个模型`, 'ok');
+            toastr.success(`已获取 ${list.length} 个模型`, LOG);
         } catch (err) {
-            setStatus(`失败：${err.message}`, 'err');
+            setStatus(`获取失败：${err.message}`, 'err');
+            toastr.error(err.message, `${LOG} 获取模型失败`);
+        } finally {
+            $icon.removeClass('fa-spin');
         }
     });
     $(document).on('click.cxh', '#cxh_btn_test', async function () {
-        const id = $('#cxh_conn_select').val();
-        const conn = getConn(id);
-        if (!conn) return;
-        Object.assign(conn, collectFromEditor());
+        const conn = draftConn();
+        if (!String(conn.endpoint || '').trim()) { setStatus('请先填写端点 URL', 'err'); return; }
         setStatus('测试中…');
         try {
             const list = await fetchModels(conn);
-            setStatus(`✓ 成功，${list.length} 个模型`, 'ok');
+            setStatus(`✓ 连接成功（${list.length} 个模型）`, 'ok');
+            toastr.success(`连接成功，${list.length} 个模型`, LOG);
         } catch (err) {
             setStatus(`✗ ${err.message}`, 'err');
+            toastr.error(err.message, `${LOG} 测试失败`);
         }
     });
 }

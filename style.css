@@ -125,6 +125,48 @@
     border-color: rgba(255, 193, 7, 0.5) !important;
 }
 
+/* ── 模型行：选择框 60% + 获取按钮固定 ─────────── */
+
+.cxh-model-row {
+    flex-wrap: nowrap;
+}
+
+.cxh-model-select {
+    flex: 1 1 60%;
+    min-width: 0;
+    max-width: 60%;
+}
+
+.cxh-btn-fetch {
+    flex: 0 0 auto;
+    white-space: nowrap;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    justify-content: center;
+}
+
+/* ── 动作按钮：强制一行 ─────────────────────── */
+
+.cxh-actions-row {
+    display: flex;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 8px;
+    margin-top: 10px;
+}
+
+.cxh-actions-row .cxh-action-btn {
+    flex: 1 1 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    white-space: nowrap;
+    width: auto;
+    margin: 0;
+}
+
 .cxh-actions {
     margin-top: 10px;
 }
@@ -162,4 +204,67 @@
     font-family: var(--monoFontFamily, monospace);
     cursor: pointer;
     user-select: none;
+}
+
+/* ── 手机端适配 ─────────────────────────────── */
+
+@media screen and (max-width: 1000px) {
+    .connexhub-panel {
+        gap: 6px;
+    }
+
+    .cxh-card {
+        padding: 6px 8px 8px;
+    }
+
+    .cxh-tab {
+        padding: 8px 6px;      /* 触控目标加大 */
+        font-size: 0.95em;
+    }
+
+    /* 连接工具行：允许换行，按钮加大到触控友好 */
+    .cxh-row {
+        flex-wrap: wrap;
+    }
+
+    .cxh-row .menu_button.menu_button_icon {
+        min-width: 38px;
+        min-height: 38px;
+    }
+
+    /* 模型行保持一行但比例放宽 */
+    .cxh-model-row {
+        flex-wrap: nowrap;
+    }
+
+    .cxh-model-select {
+        flex: 1 1 auto;
+        max-width: none;
+    }
+
+    .cxh-btn-fetch {
+        min-height: 38px;
+        padding: 0 10px;
+    }
+
+    /* 动作按钮仍保持一行、均分宽度 */
+    .cxh-actions-row {
+        gap: 6px;
+    }
+
+    .cxh-actions-row .cxh-action-btn {
+        min-height: 40px;
+        font-size: 0.95em;
+    }
+
+    /* 输入框防 iOS 聚焦自动缩放（>=16px 字号） */
+    #cxh_api_panel input.text_pole,
+    #cxh_api_panel select.text_pole,
+    #cxh_api_panel textarea.text_pole {
+        font-size: 16px;
+    }
+
+    .cxh-check-grid {
+        grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+    }
 }
