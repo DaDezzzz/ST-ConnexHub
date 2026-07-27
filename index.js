@@ -64,10 +64,8 @@ const DEFAULT_SETTINGS = {
     enabled: true,
     /** 顶部插头面板视图：'cxh'（默认，ConnexHub 接管） | 'native'（原版连接） */
     viewMode: 'cxh',
-    /** 活动连接 ID（仅记录，激活时才注入运行时） */
-    activeConnectionId: null,
-    /** 活动连接注入到的原生 source（避免误覆盖用户手动切换的其他 source） */
-    activeSource: null,
+    /** 当前选中连接 ID（选中即生效，无需激活） */
+    selectedConnectionId: null,
     /** 连接数组 */
     connections: [],
     /** 首次安装已初始化标志 */
@@ -97,12 +95,18 @@ function getStore() {
     if (!Array.isArray(extension_settings[NS].connections)) extension_settings[NS].connections = [];
     if (typeof extension_settings[NS].enabled !== 'boolean') extension_settings[NS].enabled = true;
     if (extension_settings[NS].viewMode !== 'native' && extension_settings[NS].viewMode !== 'cxh') extension_settings[NS].viewMode = 'cxh';
+    // 旧版本迁移：activeConnectionId → selectedConnectionId
+    if (extension_settings[NS].selectedConnectionId === undefined) {
+        extension_settings[NS].selectedConnectionId = extension_settings[NS].activeConnectionId || null;
+    }
+    delete extension_settings[NS].activeConnectionId;
+    delete extension_settings[NS].activeSource;
     return extension_settings[NS];
 }
 
 function getConnections() { return getStore().connections; }
 function getConn(id) { return getConnections().find(c => c.id === id) || null; }
-function getActiveConn() { return getConn(getStore().activeConnectionId); }
+function getSelectedConn() { return getConn(getStore().selectedConnectionId); }
 
 // ── 工具：YAML 数组解析（exclude 列表） ──────────────────────────
 
@@ -135,30 +139,19 @@ const CLAUDE_ALLOWED_EXTRA_BODY = new Set([
 ]);
 
 /**
- * 勾选式排除的可选项（按格式区分）。
- * - claude：只有白名单内字段有意义（presence/frequency_penalty 本来就不会发给 Claude）；
- *   stop_sequences 在前端 generateData 里叫 `stop`（后端映射为 stop_sequences）。
- * - openai：常用会导致中转/本地后端报错的字段。
+ * 勾选式排除的可选项：两种格式统一五项（按用户要求顺序）。
  */
+const EXCLUDE_CHECK_KEYS = [
+    { key: 'top_p', label: 'top_p' },
+    { key: 'top_k', label: 'top_k' },
+    { key: 'temperature', label: 'temperature' },
+    { key: 'presence_penalty', label: 'presence_penalty' },
+    { key: 'frequency_penalty', label: 'frequency_penalty' },
+];
+
 const EXCLUDE_CHECK_OPTIONS = {
-    claude: [
-        { key: 'temperature', label: 'temperature' },
-        { key: 'top_p', label: 'top_p' },
-        { key: 'top_k', label: 'top_k' },
-        { key: 'stop', label: 'stop_sequences' },
-    ],
-    openai: [
-        { key: 'presence_penalty', label: 'presence_penalty' },
-        { key: 'frequency_penalty', label: 'frequency_penalty' },
-        { key: 'temperature', label: 'temperature' },
-        { key: 'top_p', label: 'top_p' },
-        { key: 'top_k', label: 'top_k' },
-        { key: 'repetition_penalty', label: 'repetition_penalty' },
-        { key: 'logit_bias', label: 'logit_bias' },
-        { key: 'seed', label: 'seed' },
-        { key: 'stop', label: 'stop' },
-        { key: 'n', label: 'n' },
-    ],
+    claude: EXCLUDE_CHECK_KEYS,
+    openai: EXCLUDE_CHECK_KEYS,
 };
 
 /** 汇总一个连接的最终排除键列表：勾选项 ∪ YAML 文本列表 */
@@ -181,7 +174,7 @@ function applyActiveConnection(generateData) {
         if (!store.enabled) return;
         // 原版视图下完全不干预请求 —— 与原生数据/行为彻底隔离
         if (store.viewMode !== 'cxh') return;
-        const conn = getActiveConn();
+        const conn = getSelectedConn();
         if (!conn || !generateData) return;
 
         const expectedSource = conn.format === 'claude'
@@ -277,26 +270,19 @@ function formatScalar(v) {
     return String(v);
 }
 
-// ── 活动连接 source 注入（仅在用户主动激活时改 source + 切到 ST 原生 source） ─
+// ── 选中连接 → 同步酒馆原生 source（选中即生效，无需激活按钮） ─
 
-async function activateConnection(id) {
+async function syncSourceForConn(id, { quiet = true } = {}) {
     const conn = getConn(id);
     if (!conn) return;
     const fmt = FORMATS[conn.format];
     if (!fmt) return;
     const normalized = fmt.normalizeEndpoint(conn.endpoint);
-    if (!normalized.url) {
-        toastr.error('请先填写端点 URL', LOG);
-        return;
-    }
+    if (!normalized.url) return; // 端点未填时不动原生 source
+
     const targetSource = conn.format === 'claude'
         ? chat_completion_sources.CLAUDE
         : chat_completion_sources.CUSTOM;
-
-    // 记录活动
-    getStore().activeConnectionId = id;
-    getStore().activeSource = targetSource;
-    saveSettingsDebounced();
 
     // 把酒馆原生 source 切到目标，触发原生 UI 重渲染
     if (main_api === 'openai') {
@@ -316,14 +302,13 @@ async function activateConnection(id) {
             }, 'openai');
         } catch (err) {
             console.error(`${LOG} 切换到 openai 失败`, err);
-            toastr.error('切到 OpenAI 失败：当前为 Text Completion', LOG);
+            if (!quiet) toastr.error('切到 OpenAI 失败：当前为 Text Completion', LOG);
             return;
         }
         oai_settings.chat_completion_source = targetSource;
         $('#chat_completion_source').val(targetSource).trigger('change');
     }
-    toastr.success(`已激活：${conn.name || conn.id}`, LOG);
-    renderActiveHint();
+    if (!quiet) toastr.success(`已切换：${conn.name || conn.id}`, LOG);
 }
 
 // ── 卸载清理（hook clean / delete） ─────────────────────────────
@@ -436,17 +421,7 @@ function renderConnSelect() {
         frag.appendChild(opt);
     }
     $sel.empty().append(frag);
-    $sel.val(getStore().activeConnectionId || '');
-}
-
-function renderActiveHint() {
-    const conn = getActiveConn();
-    if (conn) {
-        $('#cxh_active_name').text(conn.name || conn.id);
-        $('#cxh_active_hint').show();
-    } else {
-        $('#cxh_active_hint').hide();
-    }
+    $sel.val(getStore().selectedConnectionId || '');
 }
 
 function fillEditor(conn) {
@@ -578,21 +553,70 @@ function saveFromEditor() {
         getConnections().push(conn);
     }
     Object.assign(conn, data);
+    // 保存即选中生效
+    getStore().selectedConnectionId = conn.id;
     saveSettingsDebounced();
     renderConnSelect();
     $('#cxh_conn_select').val(conn.id);
-    renderActiveHint();
     updateEndpointHint(conn);
+    syncSourceForConn(conn.id);
     return conn;
 }
 
-function bindEvents() {
-    $(document).on('change.cxh', '#cxh_conn_select', function () {
-        fillEditor(getConn($(this).val()));
+/** 真实对话测试：发送一条 "hi" 到聊天补全端点 */
+async function sendTestMessage(conn) {
+    const fmt = FORMATS[conn.format];
+    if (!fmt) throw new Error('未知格式');
+    const norm = fmt.normalizeEndpoint(conn.endpoint);
+    if (!norm.url) throw new Error('请先填写端点 URL');
+    const model = String(conn.model || '').trim();
+    if (!model) throw new Error('请先选择或填写模型');
+
+    const body = conn.format === 'claude'
+        ? {
+            chat_completion_source: chat_completion_sources.CLAUDE,
+            reverse_proxy: norm.url,
+            proxy_password: conn.apiKey || '',
+            model,
+            messages: [{ role: 'user', content: 'hi' }],
+            max_tokens: 32,
+            stream: false,
+        }
+        : {
+            chat_completion_source: chat_completion_sources.CUSTOM,
+            custom_url: norm.url,
+            custom_include_headers: conn.apiKey ? `Authorization: Bearer ${conn.apiKey}` : '',
+            model,
+            messages: [{ role: 'user', content: 'hi' }],
+            max_tokens: 32,
+            stream: false,
+        };
+    const resp = await fetch('/api/backends/chat-completions/generate', {
+        method: 'POST',
+        headers: getRequestHeaders(),
+        body: JSON.stringify(body),
     });
-    $(document).on('click.cxh', '#cxh_btn_activate', function () {
-        const conn = saveFromEditor();
-        if (conn) activateConnection(conn.id);
+    const text = await resp.text().catch(() => '');
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}：${text.slice(0, 200)}`);
+    let reply = '';
+    try {
+        const data = JSON.parse(text);
+        reply = data?.choices?.[0]?.message?.content       // OAI
+            ?? data?.content?.[0]?.text                     // Claude
+            ?? '';
+    } catch { /* 非 JSON 响应 */ }
+    if (!reply) throw new Error(`响应异常：${text.slice(0, 200) || '(空)'}`);
+    return reply;
+}
+
+function bindEvents() {
+    // 选中即生效：切换下拉 = 切换当前连接
+    $(document).on('change.cxh', '#cxh_conn_select', function () {
+        const id = String($(this).val() || '');
+        getStore().selectedConnectionId = id || null;
+        saveSettingsDebounced();
+        fillEditor(getConn(id));
+        if (id) syncSourceForConn(id);
     });
     $(document).on('click.cxh', '#cxh_btn_new', function () {
         // 真正全空草稿：不立即入库，点保存才创建
@@ -600,6 +624,19 @@ function bindEvents() {
         fillEditor(null);
         setStatus('新建连接：填写后点保存', 'info');
         $('#cxh_name').trigger('focus');
+    });
+    // 参数配置折叠（一级）
+    $(document).on('click.cxh', '#cxh_params_toggle', function () {
+        const $drawer = $('#cxh_params_drawer');
+        $drawer.toggleClass('cxh-open');
+        $drawer.children('.cxh-collapse-body').slideToggle(180);
+    });
+    // 高级 YAML 折叠（二级）
+    $(document).on('click.cxh', '#cxh_adv_toggle', function (e) {
+        e.stopPropagation();
+        const $drawer = $('#cxh_adv_drawer');
+        $drawer.toggleClass('cxh-open');
+        $drawer.children('.cxh-collapse-body').slideToggle(180);
     });
     $(document).on('click.cxh', '#cxh_btn_dup', function () {
         const id = $('#cxh_conn_select').val();
@@ -617,11 +654,10 @@ function bindEvents() {
         const idx = getConnections().findIndex(c => c.id === id);
         if (idx < 0) return;
         getConnections().splice(idx, 1);
-        if (getStore().activeConnectionId === id) getStore().activeConnectionId = null;
+        if (getStore().selectedConnectionId === id) getStore().selectedConnectionId = null;
         saveSettingsDebounced();
         renderConnSelect();
         fillEditor(null);
-        renderActiveHint();
         setStatus('已删除', 'ok');
     });
     // 端点/格式变化 → 实时刷新「实际请求」提示（草稿也生效）
@@ -668,11 +704,11 @@ function bindEvents() {
     $(document).on('click.cxh', '#cxh_btn_test', async function () {
         const conn = draftConn();
         if (!String(conn.endpoint || '').trim()) { setStatus('请先填写端点 URL', 'err'); return; }
-        setStatus('测试中…');
+        setStatus('发送 "hi" 测试中…');
         try {
-            const list = await fetchModels(conn);
-            setStatus(`✓ 连接成功（${list.length} 个模型）`, 'ok');
-            toastr.success(`连接成功，${list.length} 个模型`, LOG);
+            const reply = await sendTestMessage(conn);
+            setStatus(`✓ 连接成功，回复：${reply.slice(0, 80)}`, 'ok');
+            toastr.success(`回复：${reply.slice(0, 80)}`, `${LOG} 测试成功`);
         } catch (err) {
             setStatus(`✗ ${err.message}`, 'err');
             toastr.error(err.message, `${LOG} 测试失败`);
@@ -753,10 +789,11 @@ jQuery(async () => {
     }
 
     renderConnSelect();
-    renderActiveHint();
-    const initial = getActiveConn() || getConn($('#cxh_conn_select').val());
+    const initial = getSelectedConn() || getConn($('#cxh_conn_select').val());
     fillEditor(initial);
     bindEvents();
+    // 启动时若已有选中连接，静默同步原生 source
+    if (getStore().viewMode === 'cxh' && initial) syncSourceForConn(initial.id);
 
     // 视图切换（默认 ConnexHub，可切回原版；两侧数据完全隔离）
     $(document).on('click.cxh-view', '#cxh_tab_cxh', () => setViewMode('cxh'));
@@ -766,16 +803,6 @@ jQuery(async () => {
     // 请求注入钩子
     eventSource.on(event_types.CHAT_COMPLETION_SETTINGS_READY, applyActiveConnection);
     eventSource.makeLast(event_types.CHAT_COMPLETION_SETTINGS_READY, applyActiveConnection);
-
-    // 用户在酒馆原生 UI 切回非活动 source 时，让活动 hint 同步
-    $(document).on('change.cxh-source', '#chat_completion_source', function () {
-        if (!getStore().enabled) return;
-        const v = String($(this).val() || '');
-        if (getStore().activeSource && v !== getStore().activeSource) {
-            getStore().activeSource = v;
-            saveSettingsDebounced();
-        }
-    });
 
     console.log(`${LOG} loaded · ${getConnections().length} connections · view=${getStore().viewMode}`);
 });
