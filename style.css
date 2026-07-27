@@ -1,9 +1,85 @@
-/* ConnexHub — 扩展面板样式（与酒馆原生风格一致） */
+/* ConnexHub — 顶部插头面板样式（接管 API 连接抽屉，可切回原版） */
 
-.connexhub-settings {
-    margin: 8px 0;
-    padding: 8px;
+.connexhub-panel {
+    margin: 0 0 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
 }
+
+/* 原版视图隐藏原生内容用 */
+#rm_api_block > .cxh-native-hidden {
+    display: none !important;
+}
+
+/* ── 视图切换条 ─────────────────────────────── */
+
+.cxh-switchbar {
+    display: flex;
+    gap: 4px;
+    padding: 3px;
+    border-radius: 8px;
+    background: rgba(128, 128, 128, 0.12);
+    border: 1px solid rgba(128, 128, 128, 0.2);
+}
+
+.cxh-tab {
+    flex: 1 1 0;
+    text-align: center;
+    padding: 6px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 0.9em;
+    opacity: 0.65;
+    transition: background 0.15s ease, opacity 0.15s ease;
+    user-select: none;
+}
+
+.cxh-tab:hover {
+    opacity: 0.9;
+    background: rgba(128, 128, 128, 0.15);
+}
+
+.cxh-tab-active {
+    opacity: 1;
+    font-weight: 600;
+    background: var(--SmartThemeBlurTintColor, rgba(255, 255, 255, 0.1));
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.25);
+    border: 1px solid rgba(128, 128, 128, 0.25);
+}
+
+.cxh-tab i {
+    margin-right: 4px;
+}
+
+/* ── 卡片分区 ──────────────────────────────── */
+
+.cxh-card {
+    border: 1px solid rgba(128, 128, 128, 0.2);
+    border-radius: 8px;
+    padding: 8px 10px 10px;
+    background: rgba(128, 128, 128, 0.05);
+}
+
+.cxh-card-title {
+    font-size: 0.85em;
+    font-weight: 600;
+    opacity: 0.7;
+    margin-bottom: 6px;
+    letter-spacing: 0.03em;
+}
+
+.cxh-card-title i {
+    margin-right: 5px;
+}
+
+#cxh_main {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+/* ── 通用布局 ──────────────────────────────── */
 
 .cxh-row {
     display: flex;
@@ -12,7 +88,6 @@
     margin: 6px 0;
 }
 
-.cxh-row.flex1 > .flex1,
 .cxh-row .flex1 {
     flex: 1 1 auto;
     min-width: 0;
@@ -36,6 +111,18 @@
     font-size: 0.8em;
     margin: 4px 0 6px;
     opacity: 0.75;
+}
+
+.cxh-active-hint {
+    padding: 4px 8px;
+    border-radius: 4px;
+    background: rgba(255, 193, 7, 0.12);
+    border-left: 3px solid rgba(255, 193, 7, 0.7);
+    opacity: 1;
+}
+
+.cxh-btn-accent {
+    border-color: rgba(255, 193, 7, 0.5) !important;
 }
 
 .cxh-actions {

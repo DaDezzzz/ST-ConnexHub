@@ -62,6 +62,8 @@ const FORMATS = {
 
 const DEFAULT_SETTINGS = {
     enabled: true,
+    /** 顶部插头面板视图：'cxh'（默认，ConnexHub 接管） | 'native'（原版连接） */
+    viewMode: 'cxh',
     /** 活动连接 ID（仅记录，激活时才注入运行时） */
     activeConnectionId: null,
     /** 活动连接注入到的原生 source（避免误覆盖用户手动切换的其他 source） */
@@ -94,6 +96,7 @@ function getStore() {
     if (!extension_settings[NS]) extension_settings[NS] = structuredClone(DEFAULT_SETTINGS);
     if (!Array.isArray(extension_settings[NS].connections)) extension_settings[NS].connections = [];
     if (typeof extension_settings[NS].enabled !== 'boolean') extension_settings[NS].enabled = true;
+    if (extension_settings[NS].viewMode !== 'native' && extension_settings[NS].viewMode !== 'cxh') extension_settings[NS].viewMode = 'cxh';
     return extension_settings[NS];
 }
 
@@ -176,6 +179,8 @@ function applyActiveConnection(generateData) {
     try {
         const store = getStore();
         if (!store.enabled) return;
+        // 原版视图下完全不干预请求 —— 与原生数据/行为彻底隔离
+        if (store.viewMode !== 'cxh') return;
         const conn = getActiveConn();
         if (!conn || !generateData) return;
 
@@ -507,10 +512,6 @@ function setStatus(text, kind = 'info') {
 // ── 事件绑定（全部 document 委托） ────────────────────────────
 
 function bindEvents() {
-    $(document).on('change.cxh', '#cxh_enabled', function () {
-        getStore().enabled = !!$(this).prop('checked');
-        saveSettingsDebounced();
-    });
     $(document).on('change.cxh', '#cxh_conn_select', function () {
         fillEditor(getConn($(this).val()));
     });
@@ -618,27 +619,68 @@ function initDefaults() {
     saveSettingsDebounced();
 }
 
+// ── 顶部插头面板视图切换（ConnexHub ⇄ 原版，数据隔离） ─────────
+
+/**
+ * 原版 API 连接抽屉的原生子元素（除我们注入的面板外全部算原生）。
+ * ConnexHub 视图时隐藏原生内容；原版视图时恢复。
+ */
+function applyViewMode() {
+    const mode = getStore().viewMode;
+    const $panel = $('#cxh_api_panel');
+    const $nativeChildren = $('#rm_api_block').children().not('#cxh_api_panel');
+    if (mode === 'cxh') {
+        $nativeChildren.addClass('cxh-native-hidden');
+        $('#cxh_main').show();
+        $('#cxh_tab_cxh').addClass('cxh-tab-active');
+        $('#cxh_tab_native').removeClass('cxh-tab-active');
+    } else {
+        $nativeChildren.removeClass('cxh-native-hidden');
+        $('#cxh_main').hide();
+        $('#cxh_tab_native').addClass('cxh-tab-active');
+        $('#cxh_tab_cxh').removeClass('cxh-tab-active');
+    }
+    $panel.attr('data-view', mode);
+}
+
+function setViewMode(mode) {
+    getStore().viewMode = mode === 'native' ? 'native' : 'cxh';
+    saveSettingsDebounced();
+    applyViewMode();
+}
+
 // ── 入口 ────────────────────────────────────────────────────
 
 jQuery(async () => {
     getStore();
     initDefaults();
 
-    // 注入设置面板
+    // 注入到顶部插头（API 连接）抽屉：#rm_api_block 最上方
     try {
         const html = await renderExtensionTemplateAsync(`third-party/ST-ConnexHub`, 'settings');
-        $('#extensions_settings').append(html);
+        const $target = $('#rm_api_block');
+        if ($target.length) {
+            $target.prepend(html);
+        } else {
+            // 兜底：极端情况下退回扩展设置区
+            $('#extensions_settings').append(html);
+            console.warn(`${LOG} #rm_api_block 未找到，退回扩展设置区`);
+        }
     } catch (err) {
         console.error(`${LOG} render template failed`, err);
         return;
     }
 
-    $('#cxh_enabled').prop('checked', !!getStore().enabled);
     renderConnSelect();
     renderActiveHint();
     const initial = getActiveConn() || getConn($('#cxh_conn_select').val());
     fillEditor(initial);
     bindEvents();
+
+    // 视图切换（默认 ConnexHub，可切回原版；两侧数据完全隔离）
+    $(document).on('click.cxh-view', '#cxh_tab_cxh', () => setViewMode('cxh'));
+    $(document).on('click.cxh-view', '#cxh_tab_native', () => setViewMode('native'));
+    applyViewMode();
 
     // 请求注入钩子
     eventSource.on(event_types.CHAT_COMPLETION_SETTINGS_READY, applyActiveConnection);
@@ -654,5 +696,5 @@ jQuery(async () => {
         }
     });
 
-    console.log(`${LOG} loaded · ${getConnections().length} connections`);
+    console.log(`${LOG} loaded · ${getConnections().length} connections · view=${getStore().viewMode}`);
 });
