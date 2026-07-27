@@ -1,23 +1,22 @@
-<div id="cxh_root" class="connexhub-settings">
-    <div class="inline-drawer">
-        <div class="inline-drawer-toggle inline-drawer-header">
-            <b><i class="fa-solid fa-network-wired"></i> ConnexHub</b>
-            <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+<div id="cxh_api_panel" class="connexhub-panel">
+    <!-- 视图切换条：ConnexHub（默认） / 原版连接 -->
+    <div class="cxh-switchbar" title="切换连接管理视图（数据互相隔离）">
+        <div id="cxh_tab_cxh" class="cxh-tab cxh-tab-active">
+            <i class="fa-solid fa-network-wired"></i> ConnexHub
         </div>
-        <div class="inline-drawer-content">
+        <div id="cxh_tab_native" class="cxh-tab">
+            <i class="fa-solid fa-plug"></i> 原版连接
+        </div>
+    </div>
 
-            <!-- 总开关 -->
-            <label class="checkbox_label" title="关闭后 ConnexHub 完全不干预任何请求">
-                <input id="cxh_enabled" type="checkbox" />
-                <span>启用 ConnexHub（接管请求注入）</span>
-            </label>
-
-            <hr class="sysHR" />
-
-            <!-- 连接选择栏 -->
+    <!-- ConnexHub 主体（native 视图时隐藏） -->
+    <div id="cxh_main">
+        <!-- 连接选择栏 -->
+        <div class="cxh-card">
+            <div class="cxh-card-title"><i class="fa-solid fa-list"></i> 连接</div>
             <div class="cxh-row">
                 <select id="cxh_conn_select" class="text_pole flex1"></select>
-                <div id="cxh_btn_activate" class="menu_button menu_button_icon" title="激活此连接（后续请求使用它）">
+                <div id="cxh_btn_activate" class="menu_button menu_button_icon cxh-btn-accent" title="激活此连接（后续请求使用它）">
                     <i class="fa-solid fa-bolt"></i>
                 </div>
                 <div id="cxh_btn_new" class="menu_button menu_button_icon" title="新建连接">
@@ -30,72 +29,74 @@
                     <i class="fa-solid fa-trash-can"></i>
                 </div>
             </div>
-            <div id="cxh_active_hint" class="cxh-hint" style="display:none;">
+            <div id="cxh_active_hint" class="cxh-hint cxh-active-hint" style="display:none;">
                 <i class="fa-solid fa-bolt"></i> 活动连接：<span id="cxh_active_name"></span>
             </div>
+        </div>
 
-            <!-- 连接编辑区 -->
-            <div id="cxh_editor">
-                <label class="cxh-label">连接名称</label>
-                <input id="cxh_name" type="text" class="text_pole" placeholder="My API" />
+        <!-- 连接编辑区 -->
+        <div id="cxh_editor" class="cxh-card">
+            <div class="cxh-card-title"><i class="fa-solid fa-sliders"></i> 配置</div>
 
-                <label class="cxh-label">API 格式</label>
-                <select id="cxh_format" class="text_pole">
-                    <option value="openai">OpenAI 兼容（/chat/completions）</option>
-                    <option value="claude">Claude（/messages）</option>
-                </select>
+            <label class="cxh-label">连接名称</label>
+            <input id="cxh_name" type="text" class="text_pole" placeholder="My API" />
 
-                <label class="cxh-label">端点 Base URL</label>
-                <input id="cxh_endpoint" type="text" class="text_pole cxh-mono" placeholder="https://api.example.com/v1" />
-                <small class="cxh-hint" id="cxh_endpoint_hint"></small>
+            <label class="cxh-label">API 格式</label>
+            <select id="cxh_format" class="text_pole">
+                <option value="openai">OpenAI 兼容（/chat/completions）</option>
+                <option value="claude">Claude（/messages）</option>
+            </select>
 
-                <label class="cxh-label">API Key（仅存于本扩展数据，不写酒馆密钥库）</label>
-                <div class="cxh-row">
-                    <input id="cxh_apikey" type="password" class="text_pole cxh-mono flex1" placeholder="sk-..." autocomplete="off" />
-                    <div id="cxh_btn_eye" class="menu_button menu_button_icon" title="显示/隐藏">
-                        <i class="fa-solid fa-eye"></i>
-                    </div>
+            <label class="cxh-label">端点 Base URL</label>
+            <input id="cxh_endpoint" type="text" class="text_pole cxh-mono" placeholder="https://api.example.com/v1" />
+            <small class="cxh-hint" id="cxh_endpoint_hint"></small>
+
+            <label class="cxh-label">API Key（仅存于本扩展数据，不写酒馆密钥库）</label>
+            <div class="cxh-row">
+                <input id="cxh_apikey" type="password" class="text_pole cxh-mono flex1" placeholder="sk-..." autocomplete="off" />
+                <div id="cxh_btn_eye" class="menu_button menu_button_icon" title="显示/隐藏">
+                    <i class="fa-solid fa-eye"></i>
                 </div>
-
-                <label class="cxh-label">模型</label>
-                <div class="cxh-row">
-                    <select id="cxh_model_select" class="text_pole flex1"></select>
-                    <div id="cxh_btn_fetch_models" class="menu_button menu_button_icon" title="从接口拉取模型列表">
-                        <i class="fa-solid fa-rotate"></i>
-                    </div>
-                </div>
-                <input id="cxh_model_manual" type="text" class="text_pole cxh-mono" placeholder="或手动输入模型 ID（优先级高于下拉）" />
-
-                <div class="inline-drawer cxh-sub-drawer">
-                    <div class="inline-drawer-toggle inline-drawer-header">
-                        <b>附加参数（每连接独立保存）</b>
-                        <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
-                    </div>
-                    <div class="inline-drawer-content">
-                        <label class="cxh-label">快捷排除（勾选后该参数不发送，交给 API 默认值）</label>
-                        <div id="cxh_exclude_checks" class="cxh-check-grid"></div>
-
-                        <label class="cxh-label">附加请求体参数（YAML 对象）</label>
-                        <textarea id="cxh_include_body" class="text_pole textarea_compact cxh-mono" rows="3"
-                            placeholder="top_k: 20&#10;repetition_penalty: 1.1"></textarea>
-
-                        <label class="cxh-label">排除参数（YAML 数组，与上方勾选取并集）</label>
-                        <textarea id="cxh_exclude_body" class="text_pole textarea_compact cxh-mono" rows="3"
-                            placeholder="- frequency_penalty&#10;- presence_penalty"></textarea>
-
-                        <label class="cxh-label">附加请求头（YAML 对象）</label>
-                        <textarea id="cxh_include_headers" class="text_pole textarea_compact cxh-mono" rows="3"
-                            placeholder="X-Custom-Header: value"></textarea>
-                        <small class="cxh-hint">Claude 格式：附加体仅安全字段（temperature / top_p / top_k / max_tokens / stop）生效；附加请求头不支持（酒馆后端限制）；排除参数完全生效。</small>
-                    </div>
-                </div>
-
-                <div class="cxh-row cxh-actions">
-                    <div id="cxh_btn_save" class="menu_button"><i class="fa-solid fa-floppy-disk"></i> 保存</div>
-                    <div id="cxh_btn_test" class="menu_button"><i class="fa-solid fa-plug"></i> 测试连接</div>
-                </div>
-                <div id="cxh_status" class="cxh-status"></div>
             </div>
+
+            <label class="cxh-label">模型</label>
+            <div class="cxh-row">
+                <select id="cxh_model_select" class="text_pole flex1"></select>
+                <div id="cxh_btn_fetch_models" class="menu_button menu_button_icon" title="从接口拉取模型列表">
+                    <i class="fa-solid fa-rotate"></i>
+                </div>
+            </div>
+            <input id="cxh_model_manual" type="text" class="text_pole cxh-mono" placeholder="或手动输入模型 ID（优先级高于下拉）" />
+
+            <div class="inline-drawer cxh-sub-drawer">
+                <div class="inline-drawer-toggle inline-drawer-header">
+                    <b>附加参数（每连接独立保存）</b>
+                    <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
+                </div>
+                <div class="inline-drawer-content">
+                    <label class="cxh-label">快捷排除（勾选后该参数不发送，交给 API 默认值）</label>
+                    <div id="cxh_exclude_checks" class="cxh-check-grid"></div>
+
+                    <label class="cxh-label">附加请求体参数（YAML 对象）</label>
+                    <textarea id="cxh_include_body" class="text_pole textarea_compact cxh-mono" rows="3"
+                        placeholder="top_k: 20&#10;repetition_penalty: 1.1"></textarea>
+
+                    <label class="cxh-label">排除参数（YAML 数组，与上方勾选取并集）</label>
+                    <textarea id="cxh_exclude_body" class="text_pole textarea_compact cxh-mono" rows="3"
+                        placeholder="- frequency_penalty&#10;- presence_penalty"></textarea>
+
+                    <label class="cxh-label">附加请求头（YAML 对象）</label>
+                    <textarea id="cxh_include_headers" class="text_pole textarea_compact cxh-mono" rows="3"
+                        placeholder="X-Custom-Header: value"></textarea>
+                    <small class="cxh-hint">Claude 格式：附加体仅安全字段（temperature / top_p / top_k / max_tokens / stop）生效；附加请求头不支持（酒馆后端限制）；排除参数完全生效。</small>
+                </div>
+            </div>
+
+            <div class="cxh-row cxh-actions">
+                <div id="cxh_btn_save" class="menu_button"><i class="fa-solid fa-floppy-disk"></i> 保存</div>
+                <div id="cxh_btn_test" class="menu_button"><i class="fa-solid fa-plug"></i> 测试连接</div>
+            </div>
+            <div id="cxh_status" class="cxh-status"></div>
         </div>
     </div>
 </div>
