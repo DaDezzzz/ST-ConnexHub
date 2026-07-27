@@ -84,6 +84,8 @@ const DEFAULT_CONNECTION = () => ({
     includeBody: '',
     excludeBody: '',
     includeHeaders: '',
+    /** 勾选式排除的键列表（与 excludeBody YAML 取并集） */
+    excludeChecks: [],
 });
 
 // ── 存储层 ──────────────────────────────────────────────────────
@@ -130,6 +132,42 @@ const CLAUDE_ALLOWED_EXTRA_BODY = new Set([
 ]);
 
 /**
+ * 勾选式排除的可选项（按格式区分）。
+ * - claude：只有白名单内字段有意义（presence/frequency_penalty 本来就不会发给 Claude）；
+ *   stop_sequences 在前端 generateData 里叫 `stop`（后端映射为 stop_sequences）。
+ * - openai：常用会导致中转/本地后端报错的字段。
+ */
+const EXCLUDE_CHECK_OPTIONS = {
+    claude: [
+        { key: 'temperature', label: 'temperature' },
+        { key: 'top_p', label: 'top_p' },
+        { key: 'top_k', label: 'top_k' },
+        { key: 'stop', label: 'stop_sequences' },
+    ],
+    openai: [
+        { key: 'presence_penalty', label: 'presence_penalty' },
+        { key: 'frequency_penalty', label: 'frequency_penalty' },
+        { key: 'temperature', label: 'temperature' },
+        { key: 'top_p', label: 'top_p' },
+        { key: 'top_k', label: 'top_k' },
+        { key: 'repetition_penalty', label: 'repetition_penalty' },
+        { key: 'logit_bias', label: 'logit_bias' },
+        { key: 'seed', label: 'seed' },
+        { key: 'stop', label: 'stop' },
+        { key: 'n', label: 'n' },
+    ],
+};
+
+/** 汇总一个连接的最终排除键列表：勾选项 ∪ YAML 文本列表 */
+function getExcludeKeys(conn) {
+    const set = new Set(parseYamlList(conn.excludeBody));
+    if (Array.isArray(conn.excludeChecks)) {
+        for (const k of conn.excludeChecks) set.add(k);
+    }
+    return set;
+}
+
+/**
  * 注入活动连接参数到本次请求。
  * 仅在 main_api === 'openai' 且 oai_settings.chat_completion_source 与活动连接的
  * native source 匹配时执行；OAI 走 CUSTOM，Claude 走 CLAUDE。
@@ -170,8 +208,8 @@ function applyActiveConnection(generateData) {
                     generateData.custom_include_headers || '', parseYamlObject(conn.includeHeaders),
                 );
             }
-            for (const k of parseYamlList(conn.excludeBody)) {
-                if (k && k in generateData) delete generateData[k];
+            for (const k of getExcludeKeys(conn)) {
+                if (!PROTECTED_KEYS.has(k) && k in generateData) delete generateData[k];
             }
         } else {
             // Claude 格式 —— 完全独立密钥方案：
@@ -189,7 +227,7 @@ function applyActiveConnection(generateData) {
                     if (CLAUDE_ALLOWED_EXTRA_BODY.has(k)) generateData[k] = v;
                 }
             }
-            for (const k of parseYamlList(conn.excludeBody)) {
+            for (const k of getExcludeKeys(conn)) {
                 if (!PROTECTED_KEYS.has(k) && k in generateData) delete generateData[k];
             }
         }
@@ -383,7 +421,42 @@ function fillEditor(conn) {
     $('#cxh_exclude_body').val(conn.excludeBody);
     $('#cxh_include_headers').val(conn.includeHeaders);
     renderModelSelect(conn);
+    renderExcludeChecks(conn);
     updateEndpointHint(conn);
+}
+
+/** 按连接格式渲染快捷排除勾选（每连接独立保存于 conn.excludeChecks） */
+function renderExcludeChecks(conn) {
+    const $box = $('#cxh_exclude_checks');
+    if (!$box.length) return;
+    const format = conn?.format === 'claude' ? 'claude' : 'openai';
+    const options = EXCLUDE_CHECK_OPTIONS[format];
+    const checked = new Set(Array.isArray(conn?.excludeChecks) ? conn.excludeChecks : []);
+    const frag = document.createDocumentFragment();
+    for (const { key, label } of options) {
+        const lab = document.createElement('label');
+        lab.className = 'cxh-check-item';
+        const input = document.createElement('input');
+        input.type = 'checkbox';
+        input.value = key;
+        input.checked = checked.has(key);
+        input.dataset.cxhExclude = '1';
+        const span = document.createElement('span');
+        span.textContent = label;
+        lab.appendChild(input);
+        lab.appendChild(span);
+        frag.appendChild(lab);
+    }
+    $box.empty().append(frag);
+}
+
+/** 从 UI 读取勾选的排除键 */
+function collectExcludeChecks() {
+    const keys = [];
+    $('#cxh_exclude_checks input[data-cxh-exclude]:checked').each(function () {
+        keys.push(String($(this).val()));
+    });
+    return keys;
 }
 
 function renderModelSelect(conn) {
@@ -421,6 +494,7 @@ function collectFromEditor() {
         includeBody: String($('#cxh_include_body').val() || ''),
         excludeBody: String($('#cxh_exclude_body').val() || ''),
         includeHeaders: String($('#cxh_include_headers').val() || ''),
+        excludeChecks: collectExcludeChecks(),
     };
 }
 
@@ -476,6 +550,11 @@ function bindEvents() {
         const id = $('#cxh_conn_select').val();
         const conn = getConn(id);
         if (conn) updateEndpointHint({ ...conn, format: $('#cxh_format').val() });
+    });
+    // 切换格式时重渲染勾选组（两种格式选项不同；保留已保存的勾选交集）
+    $(document).on('change.cxh', '#cxh_format', function () {
+        const conn = getConn($('#cxh_conn_select').val());
+        renderExcludeChecks({ ...(conn || {}), format: $(this).val() });
     });
     $(document).on('click.cxh', '#cxh_btn_eye', function () {
         const $i = $('#cxh_apikey');

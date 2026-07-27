@@ -59,3 +59,20 @@
     border-radius: 4px;
     padding: 4px 8px;
 }
+
+.cxh-check-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    gap: 4px 10px;
+    margin: 4px 0 8px;
+}
+
+.cxh-check-item {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.85em;
+    font-family: var(--monoFontFamily, monospace);
+    cursor: pointer;
+    user-select: none;
+}

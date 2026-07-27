@@ -72,11 +72,14 @@
                         <div class="inline-drawer-icon fa-solid fa-circle-chevron-down down"></div>
                     </div>
                     <div class="inline-drawer-content">
+                        <label class="cxh-label">快捷排除（勾选后该参数不发送，交给 API 默认值）</label>
+                        <div id="cxh_exclude_checks" class="cxh-check-grid"></div>
+
                         <label class="cxh-label">附加请求体参数（YAML 对象）</label>
                         <textarea id="cxh_include_body" class="text_pole textarea_compact cxh-mono" rows="3"
                             placeholder="top_k: 20&#10;repetition_penalty: 1.1"></textarea>
 
-                        <label class="cxh-label">排除参数（YAML 数组）</label>
+                        <label class="cxh-label">排除参数（YAML 数组，与上方勾选取并集）</label>
                         <textarea id="cxh_exclude_body" class="text_pole textarea_compact cxh-mono" rows="3"
                             placeholder="- frequency_penalty&#10;- presence_penalty"></textarea>
 
