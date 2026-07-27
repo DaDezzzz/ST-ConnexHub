@@ -60,10 +60,10 @@
             </div>
 
             <label class="cxh-label">模型</label>
-            <div class="cxh-row">
-                <select id="cxh_model_select" class="text_pole flex1"></select>
-                <div id="cxh_btn_fetch_models" class="menu_button menu_button_icon" title="从接口拉取模型列表">
-                    <i class="fa-solid fa-rotate"></i>
+            <div class="cxh-row cxh-model-row">
+                <select id="cxh_model_select" class="text_pole cxh-model-select"></select>
+                <div id="cxh_btn_fetch_models" class="menu_button cxh-btn-fetch" title="从接口拉取模型列表">
+                    <i class="fa-solid fa-rotate"></i> 获取模型
                 </div>
             </div>
             <input id="cxh_model_manual" type="text" class="text_pole cxh-mono" placeholder="或手动输入模型 ID（优先级高于下拉）" />
@@ -92,9 +92,9 @@
                 </div>
             </div>
 
-            <div class="cxh-row cxh-actions">
-                <div id="cxh_btn_save" class="menu_button"><i class="fa-solid fa-floppy-disk"></i> 保存</div>
-                <div id="cxh_btn_test" class="menu_button"><i class="fa-solid fa-plug"></i> 测试连接</div>
+            <div class="cxh-actions-row">
+                <div id="cxh_btn_save" class="menu_button cxh-action-btn"><i class="fa-solid fa-floppy-disk"></i> 保存</div>
+                <div id="cxh_btn_test" class="menu_button cxh-action-btn"><i class="fa-solid fa-plug"></i> 测试连接</div>
             </div>
             <div id="cxh_status" class="cxh-status"></div>
         </div>
