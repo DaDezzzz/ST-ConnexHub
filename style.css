@@ -167,9 +167,9 @@
 .cxh-model-arrow:hover { opacity: 1; }
 
 .cxh-model-dropdown {
-    position: fixed; /* fixed + JS 定位：不受任何祖先 overflow 裁剪 */
-    z-index: 30000;
-    max-height: 45vh;
+    position: fixed; /* fixed + 挂 body + JS 定位：任何容器都裁不住 */
+    z-index: 99999;
+    min-height: 0;
     overflow-y: auto;
     background: var(--SmartThemeBlurTintColor, #1e1e1e);
     border: 1px solid var(--SmartThemeBorderColor, rgba(128,128,128,0.4));

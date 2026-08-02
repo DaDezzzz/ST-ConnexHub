@@ -713,21 +713,35 @@ function bindEvents() {
         }
     });
     // ── 模型自绘下拉 ──
-    /** fixed 定位：按输入框位置摆放，向下空间不足时向上弹，彻底不受容器 overflow 裁剪 */
+    // 下拉节点挂到 body 下：逃出酒馆抽屉的 backdrop-filter/transform 形成的 containing block，
+    // 保证 fixed 真正相对视口、且 z-index 盖住一切
+    const ddEl = document.getElementById('cxh_model_dropdown');
+    if (ddEl && ddEl.parentElement !== document.body) document.body.appendChild(ddEl);
+
+    /**
+     * 定位策略（完整可见优先级最高）：
+     * 1. 下方空间 ≥ 最低高度 → 贴输入框下方展示；
+     * 2. 否则上方空间 ≥ 最低高度 → 贴输入框上方展示；
+     * 3. 两边都不够 → 直接贴视口顶部，maxHeight 用满整个视口，保证看得全。
+     */
     function positionModelDropdown() {
         const $dd = $('#cxh_model_dropdown');
         const wrap = document.querySelector('.cxh-model-wrap');
         if (!$dd.length || !wrap) return;
+        const MIN_H = 220; // 最低展示高度
+        const PAD = 8;
         const r = wrap.getBoundingClientRect();
         const vh = window.innerHeight;
-        const spaceBelow = vh - r.bottom - 8;
-        const spaceAbove = r.top - 8;
-        const maxH = Math.min(vh * 0.45, Math.max(spaceBelow, spaceAbove));
-        $dd.css({ left: `${r.left}px`, width: `${r.width}px`, maxHeight: `${maxH}px` });
-        if (spaceBelow >= maxH || spaceBelow >= spaceAbove) {
-            $dd.css({ top: `${r.bottom + 2}px`, bottom: 'auto' });
+        const spaceBelow = vh - r.bottom - PAD;
+        const spaceAbove = r.top - PAD;
+        $dd.css({ left: `${r.left}px`, width: `${r.width}px` });
+        if (spaceBelow >= MIN_H) {
+            $dd.css({ top: `${r.bottom + 2}px`, bottom: 'auto', maxHeight: `${spaceBelow}px` });
+        } else if (spaceAbove >= MIN_H) {
+            $dd.css({ top: 'auto', bottom: `${vh - r.top + 2}px`, maxHeight: `${spaceAbove}px` });
         } else {
-            $dd.css({ top: 'auto', bottom: `${vh - r.top + 2}px` });
+            // 两边都放不下：贴视口顶，整屏高度展示（优先保证看全列表）
+            $dd.css({ top: `${PAD}px`, bottom: 'auto', maxHeight: `${vh - PAD * 2}px` });
         }
     }
     // 点箭头：无条件弹出完整列表（datalist 会按已有值过滤导致"没反应"，故自绘）
@@ -757,9 +771,9 @@ function bindEvents() {
         $dd.show();
         positionModelDropdown();
     });
-    // 点击面板外任意处收起；滚动/窗口变化时收起（fixed 定位不会跟随滚动）
+    // 点击面板外任意处收起（下拉已挂 body，需同时排除下拉自身）；滚动/窗口变化时收起
     $(document).on('click.cxh-dd', function (e) {
-        if (!$(e.target).closest('.cxh-model-wrap').length) $('#cxh_model_dropdown').hide();
+        if (!$(e.target).closest('.cxh-model-wrap, #cxh_model_dropdown').length) $('#cxh_model_dropdown').hide();
     });
     $(window).on('resize.cxh-dd', () => $('#cxh_model_dropdown').hide());
     document.addEventListener('scroll', (e) => {
