@@ -717,6 +717,21 @@ function bindEvents() {
     // 保证 fixed 真正相对视口、且 z-index 盖住一切
     const ddEl = document.getElementById('cxh_model_dropdown');
     if (ddEl && ddEl.parentElement !== document.body) document.body.appendChild(ddEl);
+    // 直接在下拉本体拦截冒泡：它挂在 body 下、不在抽屉 DOM 内，若让事件冒到 document，
+    // 酒馆的「点击外部关闭抽屉」逻辑会把 API 面板关掉（document 级委托的 stopPropagation 来不及）
+    if (ddEl && !ddEl.dataset.cxhStopBound) {
+        for (const ev of ['mousedown', 'click', 'touchstart', 'pointerdown']) {
+            ddEl.addEventListener(ev, (e) => e.stopPropagation());
+        }
+        // 点选项：填入输入框并收起（须绑在本体上——冒泡已被拦，document 委托收不到）
+        ddEl.addEventListener('click', (e) => {
+            const item = e.target.closest('.cxh-dd-item');
+            if (!item) return;
+            $('#cxh_model_input').val(String(item.dataset.cxhModel || ''));
+            ddEl.style.display = 'none';
+        });
+        ddEl.dataset.cxhStopBound = '1';
+    }
 
     /**
      * 定位策略（完整可见优先级最高）：
@@ -752,12 +767,6 @@ function bindEvents() {
         $dd.find('.cxh-dd-item').show(); // 展开时不过滤，显示全部
         $dd.show();
         positionModelDropdown();
-    });
-    // 点选项：填入输入框并收起
-    $(document).on('click.cxh', '#cxh_model_dropdown .cxh-dd-item', function (e) {
-        e.stopPropagation();
-        $('#cxh_model_input').val(String($(this).data('cxhModel') || ''));
-        $('#cxh_model_dropdown').hide();
     });
     // 输入时实时过滤（子串匹配，不区分大小写），且自动展开
     $(document).on('input.cxh', '#cxh_model_input', function () {
