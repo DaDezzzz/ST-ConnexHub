@@ -167,12 +167,9 @@
 .cxh-model-arrow:hover { opacity: 1; }
 
 .cxh-model-dropdown {
-    position: absolute;
-    top: calc(100% + 2px);
-    left: 0;
-    right: 0;
-    z-index: 3000;
-    max-height: 40vh;
+    position: fixed; /* fixed + JS 定位：不受任何祖先 overflow 裁剪 */
+    z-index: 30000;
+    max-height: 45vh;
     overflow-y: auto;
     background: var(--SmartThemeBlurTintColor, #1e1e1e);
     border: 1px solid var(--SmartThemeBorderColor, rgba(128,128,128,0.4));
