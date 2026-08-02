@@ -133,6 +133,12 @@
     max-width: 60%;
 }
 
+/* 酒馆 select.text_pole 内置 padding-right:20px（给下拉箭头留位），
+   给同结构的 input 也补上，视觉宽度就完全一致 */
+input.cxh-model-select {
+    padding-right: 20px;
+}
+
 .cxh-btn-fetch {
     flex: 0 0 auto;
     white-space: nowrap;
