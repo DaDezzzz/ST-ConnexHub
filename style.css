@@ -133,6 +133,71 @@
     max-width: 60%;
 }
 
+/* ── 模型自绘下拉（input + 箭头 + 弹出列表） ─────────── */
+
+.cxh-model-wrap {
+    position: relative;
+    flex: 1 1 60%;
+    min-width: 0;
+    max-width: 60%;
+    display: flex;
+    align-items: center;
+}
+
+.cxh-model-wrap .cxh-model-input {
+    width: 100%;
+    margin: 0;
+    padding-right: 28px; /* 给箭头留位 */
+    box-sizing: border-box;
+}
+
+.cxh-model-arrow {
+    position: absolute;
+    right: 4px;
+    top: 0;
+    bottom: 0;
+    width: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0.6;
+    font-size: 0.8em;
+}
+.cxh-model-arrow:hover { opacity: 1; }
+
+.cxh-model-dropdown {
+    position: absolute;
+    top: calc(100% + 2px);
+    left: 0;
+    right: 0;
+    z-index: 3000;
+    max-height: 40vh;
+    overflow-y: auto;
+    background: var(--SmartThemeBlurTintColor, #1e1e1e);
+    border: 1px solid var(--SmartThemeBorderColor, rgba(128,128,128,0.4));
+    border-radius: 6px;
+    box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+}
+
+.cxh-dd-item {
+    padding: 6px 10px;
+    cursor: pointer;
+    font-size: 0.9em;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+.cxh-dd-item:hover {
+    background: rgba(128, 128, 128, 0.25);
+}
+
+.cxh-dd-empty {
+    padding: 8px 10px;
+    opacity: 0.6;
+    font-size: 0.85em;
+}
+
 .cxh-btn-fetch {
     flex: 0 0 auto;
     white-space: nowrap;

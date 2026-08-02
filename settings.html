@@ -55,8 +55,11 @@
 
             <label class="cxh-label">模型</label>
             <div class="cxh-row cxh-model-row">
-                <input id="cxh_model_input" type="text" class="text_pole cxh-model-select" list="cxh_model_datalist" placeholder="输入或从列表选择模型 ID" autocomplete="off" />
-                <datalist id="cxh_model_datalist"></datalist>
+                <div class="cxh-model-wrap">
+                    <input id="cxh_model_input" type="text" class="text_pole cxh-model-input" placeholder="输入或点右侧箭头选择模型" autocomplete="off" />
+                    <div id="cxh_model_arrow" class="cxh-model-arrow" title="展开模型列表"><i class="fa-solid fa-chevron-down"></i></div>
+                    <div id="cxh_model_dropdown" class="cxh-model-dropdown" style="display:none;"></div>
+                </div>
                 <div id="cxh_btn_fetch_models" class="menu_button cxh-btn-fetch" title="从接口拉取模型列表">
                     <i class="fa-solid fa-rotate"></i> 获取模型
                 </div>
