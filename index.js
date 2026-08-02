@@ -713,6 +713,23 @@ function bindEvents() {
         }
     });
     // ── 模型自绘下拉 ──
+    /** fixed 定位：按输入框位置摆放，向下空间不足时向上弹，彻底不受容器 overflow 裁剪 */
+    function positionModelDropdown() {
+        const $dd = $('#cxh_model_dropdown');
+        const wrap = document.querySelector('.cxh-model-wrap');
+        if (!$dd.length || !wrap) return;
+        const r = wrap.getBoundingClientRect();
+        const vh = window.innerHeight;
+        const spaceBelow = vh - r.bottom - 8;
+        const spaceAbove = r.top - 8;
+        const maxH = Math.min(vh * 0.45, Math.max(spaceBelow, spaceAbove));
+        $dd.css({ left: `${r.left}px`, width: `${r.width}px`, maxHeight: `${maxH}px` });
+        if (spaceBelow >= maxH || spaceBelow >= spaceAbove) {
+            $dd.css({ top: `${r.bottom + 2}px`, bottom: 'auto' });
+        } else {
+            $dd.css({ top: 'auto', bottom: `${vh - r.top + 2}px` });
+        }
+    }
     // 点箭头：无条件弹出完整列表（datalist 会按已有值过滤导致"没反应"，故自绘）
     $(document).on('click.cxh', '#cxh_model_arrow', function (e) {
         e.stopPropagation();
@@ -720,6 +737,7 @@ function bindEvents() {
         if ($dd.is(':visible')) { $dd.hide(); return; }
         $dd.find('.cxh-dd-item').show(); // 展开时不过滤，显示全部
         $dd.show();
+        positionModelDropdown();
     });
     // 点选项：填入输入框并收起
     $(document).on('click.cxh', '#cxh_model_dropdown .cxh-dd-item', function (e) {
@@ -737,11 +755,17 @@ function bindEvents() {
             $(this).toggle(!kw || String($(this).data('cxhModel')).toLowerCase().includes(kw));
         });
         $dd.show();
+        positionModelDropdown();
     });
-    // 点击面板外任意处收起
+    // 点击面板外任意处收起；滚动/窗口变化时收起（fixed 定位不会跟随滚动）
     $(document).on('click.cxh-dd', function (e) {
         if (!$(e.target).closest('.cxh-model-wrap').length) $('#cxh_model_dropdown').hide();
     });
+    $(window).on('resize.cxh-dd', () => $('#cxh_model_dropdown').hide());
+    document.addEventListener('scroll', (e) => {
+        const dd = document.getElementById('cxh_model_dropdown');
+        if (dd && dd.style.display !== 'none' && !dd.contains(e.target)) dd.style.display = 'none';
+    }, true);
     $(document).on('click.cxh', '#cxh_btn_test', async function () {
         const conn = draftConn();
         if (!String(conn.endpoint || '').trim()) { setStatus('请先填写端点 URL', 'err'); return; }
