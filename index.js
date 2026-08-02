@@ -707,6 +707,11 @@ function bindEvents() {
             $icon.removeClass('fa-spin');
         }
     });
+    // 下拉选中模型 → 同步到手动输入框（模型最终值以输入框优先，避免用户困惑）
+    $(document).on('change.cxh', '#cxh_model_select', function () {
+        const v = String($(this).val() || '');
+        if (v) $('#cxh_model_manual').val(v);
+    });
     $(document).on('click.cxh', '#cxh_btn_test', async function () {
         const conn = draftConn();
         if (!String(conn.endpoint || '').trim()) { setStatus('请先填写端点 URL', 'err'); return; }
