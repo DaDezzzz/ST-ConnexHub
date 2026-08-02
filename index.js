@@ -437,7 +437,7 @@ function fillEditor(conn) {
     $('#cxh_format').val(conn.format);
     $('#cxh_endpoint').val(conn.endpoint);
     $('#cxh_apikey').val(conn.apiKey);
-    $('#cxh_model_manual').val(conn.model);
+    $('#cxh_model_input').val(conn.model);
     $('#cxh_include_body').val(conn.includeBody);
     $('#cxh_exclude_body').val(conn.excludeBody);
     $('#cxh_include_headers').val(conn.includeHeaders);
@@ -481,21 +481,16 @@ function collectExcludeChecks() {
 }
 
 function renderModelSelect(conn) {
-    const $sel = $('#cxh_model_select');
+    // datalist 只承担「建议列表」，实际值都从 #cxh_model_input 读；空列表也保留元素以便下次填充
+    const $dl = $('#cxh_model_datalist');
     const list = conn?.availableModels || [];
     const frag = document.createDocumentFragment();
-    const blank = document.createElement('option');
-    blank.value = ''; blank.textContent = list.length ? '— 从列表选择 —' : '（尚未拉取模型）';
-    frag.appendChild(blank);
     for (const m of list) {
         const opt = document.createElement('option');
-        opt.value = m.id; opt.textContent = m.id;
+        opt.value = m.id;
         frag.appendChild(opt);
     }
-    $sel.empty().append(frag);
-    // 优先匹配 manual 输入
-    const manual = String(conn?.model || '').trim();
-    if (manual) $sel.val(manual);
+    $dl.empty().append(frag);
 }
 
 function updateEndpointHint(conn) {
@@ -509,7 +504,7 @@ function collectFromEditor() {
         format: $('#cxh_format').val(),
         endpoint: String($('#cxh_endpoint').val() || '').trim(),
         apiKey: String($('#cxh_apikey').val() || '').trim(),
-        model: String($('#cxh_model_manual').val() || $('#cxh_model_select').val() || '').trim(),
+        model: String($('#cxh_model_input').val() || '').trim(),
         includeBody: String($('#cxh_include_body').val() || ''),
         excludeBody: String($('#cxh_exclude_body').val() || ''),
         includeHeaders: String($('#cxh_include_headers').val() || ''),
@@ -706,11 +701,6 @@ function bindEvents() {
         } finally {
             $icon.removeClass('fa-spin');
         }
-    });
-    // 下拉选中模型 → 同步到手动输入框（模型最终值以输入框优先，避免用户困惑）
-    $(document).on('change.cxh', '#cxh_model_select', function () {
-        const v = String($(this).val() || '');
-        if (v) $('#cxh_model_manual').val(v);
     });
     $(document).on('click.cxh', '#cxh_btn_test', async function () {
         const conn = draftConn();
