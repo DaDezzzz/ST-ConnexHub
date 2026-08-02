@@ -481,16 +481,26 @@ function collectExcludeChecks() {
 }
 
 function renderModelSelect(conn) {
-    // datalist 只承担「建议列表」，实际值都从 #cxh_model_input 读；空列表也保留元素以便下次填充
-    const $dl = $('#cxh_model_datalist');
+    // 自绘下拉：候选列表渲染进 #cxh_model_dropdown；实际值始终从 #cxh_model_input 读
+    const $dd = $('#cxh_model_dropdown');
+    if (!$dd.length) return;
     const list = conn?.availableModels || [];
     const frag = document.createDocumentFragment();
-    for (const m of list) {
-        const opt = document.createElement('option');
-        opt.value = m.id;
-        frag.appendChild(opt);
+    if (!list.length) {
+        const empty = document.createElement('div');
+        empty.className = 'cxh-dd-empty';
+        empty.textContent = '（尚未拉取模型，点「获取模型」）';
+        frag.appendChild(empty);
+    } else {
+        for (const m of list) {
+            const item = document.createElement('div');
+            item.className = 'cxh-dd-item';
+            item.textContent = m.id;
+            item.dataset.cxhModel = m.id;
+            frag.appendChild(item);
+        }
     }
-    $dl.empty().append(frag);
+    $dd.empty().append(frag);
 }
 
 function updateEndpointHint(conn) {
@@ -701,6 +711,36 @@ function bindEvents() {
         } finally {
             $icon.removeClass('fa-spin');
         }
+    });
+    // ── 模型自绘下拉 ──
+    // 点箭头：无条件弹出完整列表（datalist 会按已有值过滤导致"没反应"，故自绘）
+    $(document).on('click.cxh', '#cxh_model_arrow', function (e) {
+        e.stopPropagation();
+        const $dd = $('#cxh_model_dropdown');
+        if ($dd.is(':visible')) { $dd.hide(); return; }
+        $dd.find('.cxh-dd-item').show(); // 展开时不过滤，显示全部
+        $dd.show();
+    });
+    // 点选项：填入输入框并收起
+    $(document).on('click.cxh', '#cxh_model_dropdown .cxh-dd-item', function (e) {
+        e.stopPropagation();
+        $('#cxh_model_input').val(String($(this).data('cxhModel') || ''));
+        $('#cxh_model_dropdown').hide();
+    });
+    // 输入时实时过滤（子串匹配，不区分大小写），且自动展开
+    $(document).on('input.cxh', '#cxh_model_input', function () {
+        const kw = String($(this).val() || '').toLowerCase();
+        const $dd = $('#cxh_model_dropdown');
+        const $items = $dd.find('.cxh-dd-item');
+        if (!$items.length) return;
+        $items.each(function () {
+            $(this).toggle(!kw || String($(this).data('cxhModel')).toLowerCase().includes(kw));
+        });
+        $dd.show();
+    });
+    // 点击面板外任意处收起
+    $(document).on('click.cxh-dd', function (e) {
+        if (!$(e.target).closest('.cxh-model-wrap').length) $('#cxh_model_dropdown').hide();
     });
     $(document).on('click.cxh', '#cxh_btn_test', async function () {
         const conn = draftConn();
