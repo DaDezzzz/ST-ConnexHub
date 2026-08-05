@@ -156,14 +156,17 @@ const EXCLUDE_CHECK_OPTIONS = {
 
 /** 汇总一个连接的最终排除键列表：勾选项 ∪ YAML 文本列表 */
 function getExcludeKeys(conn) {
-    const set = new Set(pa/**
+    const set = new Set(parseYamlList(conn.excludeBody));
+    if (Array.isArray(conn.excludeChecks)) {
+        for (const k of conn.excludeChecks) set.add(k);
+    }
+    return set;
+}
+
+/**
  * 注入活动连接参数到本次请求。
  * 仅在 main_api === 'openai' 且 oai_settings.chat_completion_source 与活动连接的
  * native source 匹配时执行；OAI 走 CUSTOM，Claude 走 CLAUDE。
- *
- * 数据源用 draftConn()（编辑器当前所见）而非 getSelectedConn()（仅已保存数据）：
- * 与「测试连接」按钮共用同一数据源，保证未保存的模型/端点/密钥改动
- * 在酒馆发送时同样生效 —— 所见即所得，契合「选中即生效」语义。
  */
 function applyActiveConnection(generateData) {
     try {
@@ -172,12 +175,10 @@ function applyActiveConnection(generateData) {
         // 原版视图下完全不干预请求 —— 与原生数据/行为彻底隔离
         if (store.viewMode !== 'cxh') return;
         if (!generateData) return;
+        // 用编辑器草稿（draftConn）而非仅已保存数据：与「测试连接」同源，
+        // 未保存的模型/端点/密钥改动在酒馆发送时同样生效（选中即生效）
         const conn = draftConn();
-        if (!String(conn.endpoint || '').trim()) return;n;
-        // 原版视图下完全不干预请求 —— 与原生数据/行为彻底隔离
-        if (store.viewMode !== 'cxh') return;
-        const conn = getSelectedConn();
-        if (!conn || !generateData) return;
+        if (!String(conn.endpoint || '').trim()) return;
 
         const expectedSource = conn.format === 'claude'
             ? chat_completion_sources.CLAUDE
