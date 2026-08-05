@@ -135,27 +135,29 @@
 
 /* ── 模型自绘下拉（input + 箭头 + 弹出列表） ─────────── */
 
-.cxh-model-wrap {
-    position: relative;
-    flex: 1 1 60%;
-    min-width: 0;
-    max-width: 60%;
-    display: flex;
-    align-items: center;
-}
-
-.cxh-model-wrap .cxh-model-input {
+.cxh-mode.cxh-model-wrap .cxh-model-input {
     width: 100%;
     margin: 0;
-    padding-right: 28px; /* 给箭头留位 */
+    padding-right: 40px; /* 给加大后的箭头留位 */
     box-sizing: border-box;
 }
 
 .cxh-model-arrow {
     position: absolute;
-    right: 4px;
+    right: 2px;
     top: 0;
     bottom: 0;
+    width: 36px; /* 触控目标加大，移动端友好 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    opacity: 0.6;
+    font-size: 0.8em;
+    z-index: 3; /* 置顶：不被输入框覆盖，移动端可点 */
+    touch-action: manipulation; /* 消除移动端点击延迟/双击缩放干扰 */
+    -webkit-tap-highlight-color: transparent;
+} 0;
     width: 22px;
     display: flex;
     align-items: center;
