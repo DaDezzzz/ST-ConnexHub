@@ -305,13 +305,11 @@ async function syncSourceForConn(id, { quiet = true } = {}) {
             }, 'openai');
         } catch (err) {
             console.error(`${LOG} 切换到 openai 失败`, err);
-            if (!quiet) toastr.error('切到 OpenAI 失败：当前为 Text Completion', LOG);
             return;
         }
         oai_settings.chat_completion_source = targetSource;
         $('#chat_completion_source').val(targetSource).trigger('change');
     }
-    if (!quiet) toastr.success(`已切换：${conn.name || conn.id}`, LOG);
 }
 
 // ── 卸载清理（hook clean / delete） ─────────────────────────────
@@ -545,7 +543,6 @@ function saveFromEditor() {
     const data = collectFromEditor();
     if (!data.name) {
         setStatus('请填写连接名称后再保存', 'err');
-        toastr.warning('连接名称不能为空', LOG);
         $('#cxh_name').trigger('focus');
         return null;
     }
@@ -691,7 +688,6 @@ function bindEvents() {
         const conn = saveFromEditor();
         if (conn) {
             setStatus(`已保存：${conn.name}`, 'ok');
-            toastr.success(`已保存：${conn.name}`, LOG);
         }
     });
     $(document).on('click.cxh', '#cxh_btn_fetch_models', async function () {
@@ -707,10 +703,8 @@ function bindEvents() {
             if (saved) { saved.availableModels = list; saved.lastFetched = Date.now(); saveSettingsDebounced(); }
             renderModelSelect({ ...conn, availableModels: list });
             setStatus(`已获取 ${list.length} 个模型`, 'ok');
-            toastr.success(`已获取 ${list.length} 个模型`, LOG);
         } catch (err) {
             setStatus(`获取失败：${err.message}`, 'err');
-            toastr.error(err.message, `${LOG} 获取模型失败`);
         } finally {
             $icon.removeClass('fa-spin');
         }
@@ -799,10 +793,8 @@ function bindEvents() {
         try {
             const reply = await sendTestMessage(conn);
             setStatus(`✓ 连接成功，回复：${reply.slice(0, 80)}`, 'ok');
-            toastr.success(`回复：${reply.slice(0, 80)}`, `${LOG} 测试成功`);
         } catch (err) {
             setStatus(`✗ ${err.message}`, 'err');
-            toastr.error(err.message, `${LOG} 测试失败`);
         }
     });
 }
