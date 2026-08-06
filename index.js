@@ -86,6 +86,8 @@ const DEFAULT_CONNECTION = () => ({
     includeHeaders: '',
     /** 勾选式排除的键列表（与 excludeBody YAML 取并集） */
     excludeChecks: [],
+    /** 提示词后处理类型（透传 ST 后端原生处理；'' = 未选择） */
+    promptPostProcessing: '',
 });
 
 // ── 存储层 ──────────────────────────────────────────────────────
@@ -191,6 +193,9 @@ function applyActiveConnection(generateData) {
 
         const normalized = fmt.normalizeEndpoint(conn.endpoint);
         const model = String(conn.model || '').trim();
+
+        // 提示词后处理：原样透传原生字段，ST 后端 /generate 入口统一处理（OpenAI/Claude 均生效）
+        if (conn.promptPostProcessing) generateData.custom_prompt_post_processing = conn.promptPostProcessing;
 
         if (conn.format === 'openai') {
             generateData.custom_url = normalized.url;
@@ -429,6 +434,7 @@ function fillEditor(conn) {
     if (!conn) {
         $('#cxh_editor input, #cxh_editor textarea').val('');
         $('#cxh_format').val('openai');
+        $('#cxh_prompt_pp').val('');
         renderModelSelect(null);
         renderExcludeChecks(null);
         updateEndpointHint(null);
@@ -436,6 +442,7 @@ function fillEditor(conn) {
     }
     $('#cxh_name').val(conn.name);
     $('#cxh_format').val(conn.format);
+    $('#cxh_prompt_pp').val(conn.promptPostProcessing || '');
     $('#cxh_endpoint').val(conn.endpoint);
     $('#cxh_apikey').val(conn.apiKey);
     $('#cxh_model_input').val(conn.model);
@@ -513,6 +520,7 @@ function collectFromEditor() {
     return {
         name: String($('#cxh_name').val() || '').trim(),
         format: $('#cxh_format').val(),
+        promptPostProcessing: String($('#cxh_prompt_pp').val() || ''),
         endpoint: String($('#cxh_endpoint').val() || '').trim(),
         apiKey: String($('#cxh_apikey').val() || '').trim(),
         model: String($('#cxh_model_input').val() || '').trim(),
@@ -779,7 +787,7 @@ function bindEvents() {
     });
     // 点击面板外任意处收起（下拉已挂 body，需同时排除下拉自身）；滚动/窗口变化时收起
     $(document).on('click.cxh-dd', function (e) {
-        if (!$(e.target).closest('.cxh-model-wrap, #cxh_model_dropdown').length) $('#cxh_model_dropdown').hide();
+        if (!$(e.target).closest('.cxh-model-wrap, #cxh_model_dropdown, #cxh_model_arrow').length) $('#cxh_model_dropdown').hide();
     });
     $(window).on('resize.cxh-dd', () => $('#cxh_model_dropdown').hide());
     document.addEventListener('scroll', (e) => {

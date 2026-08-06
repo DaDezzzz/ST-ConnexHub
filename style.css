@@ -137,9 +137,8 @@
 
 .cxh-model-wrap {
     position: relative;
-    flex: 1 1 60%;
+    flex: 1 1 auto;
     min-width: 0;
-    max-width: 60%;
     display: flex;
     align-items: center;
 }
@@ -147,27 +146,23 @@
 .cxh-model-wrap .cxh-model-input {
     width: 100%;
     margin: 0;
-    padding-right: 40px; /* 给加大后的箭头留位 */
     box-sizing: border-box;
 }
 
-.cxh-model-arrow {
-    position: absolute;
-    right: 2px;
-    top: 0;
-    bottom: 0;
-    width: 36px; /* 触控目标加大，移动端友好 */
-    display: flex;
+/* 模型下拉按钮：独立于输入框（不再绝对定位叠在 input 上）。
+   iOS Safari 对叠在 input 上的覆盖层触摸命中不可靠（tap 会落到 input 唤起键盘），
+   拆成独立按钮是根治方案 */
+.cxh-btn-arrow {
+    flex: 0 0 auto;
+    min-width: 38px;
+    display: inline-flex;
     align-items: center;
     justify-content: center;
-    cursor: pointer;
-    opacity: 0.6;
-    font-size: 0.8em;
-    z-index: 3; /* 置顶：不被输入框覆盖，移动端可点 */
-    touch-action: manipulation; /* 消除移动端点击延迟/双击缩放干扰 */
+    margin: 0;
+    padding: 4px 10px;
+    touch-action: manipulation;
     -webkit-tap-highlight-color: transparent;
 }
-.cxh-model-arrow:hover { opacity: 1; }
 
 .cxh-model-dropdown {
     position: fixed; /* fixed + 挂 body + JS 定位：任何容器都裁不住 */
