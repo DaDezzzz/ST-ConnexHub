@@ -56,14 +56,32 @@
             <label class="cxh-label">模型</label>
             <div class="cxh-row cxh-model-row">
                 <div class="cxh-model-wrap">
-                    <input id="cxh_model_input" type="text" class="text_pole cxh-model-input" placeholder="输入或点右侧箭头选择模型" autocomplete="off" />
-                    <div id="cxh_model_arrow" class="cxh-model-arrow" title="展开模型列表"><i class="fa-solid fa-chevron-down"></i></div>
+                    <input id="cxh_model_input" type="text" class="text_pole cxh-model-input" placeholder="输入模型名，或点右侧按钮选择" autocomplete="off" />
                     <div id="cxh_model_dropdown" class="cxh-model-dropdown" style="display:none;"></div>
+                </div>
+                <div id="cxh_model_arrow" class="menu_button menu_button_icon cxh-btn-arrow" title="展开模型列表">
+                    <i class="fa-solid fa-chevron-down"></i>
                 </div>
                 <div id="cxh_btn_fetch_models" class="menu_button cxh-btn-fetch" title="从接口拉取模型列表">
                     <i class="fa-solid fa-rotate"></i> 获取模型
                 </div>
             </div>
+
+            <label class="cxh-label">提示词后处理（由 SillyTavern 原生后端处理）</label>
+            <select id="cxh_prompt_pp" class="text_pole" title="发送到 API 前对提示词应用的附加处理">
+                <option value="">未选择</option>
+                <optgroup label="含工具">
+                    <option value="merge_tools">合并相同角色连续的发言（含工具）</option>
+                    <option value="semi_tools">半严格（强制对话角色交替）（含工具）</option>
+                    <option value="strict_tools">严格（强制对话角色交替、用户最先）（含工具）</option>
+                </optgroup>
+                <optgroup label="不含工具">
+                    <option value="merge">合并相同角色连续的发言</option>
+                    <option value="semi">半严格（强制对话角色交替）</option>
+                    <option value="strict">严格（强制对话角色交替、用户最先）</option>
+                    <option value="single">单一用户消息（无工具）</option>
+                </optgroup>
+            </select>
 
             <!-- 状态提示：位于参数配置上方 -->
             <div id="cxh_status" class="cxh-status"></div>
