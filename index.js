@@ -348,11 +348,18 @@ async function fetchModels(conn) {
     if (!norm.url) throw new Error('请先填写端点 URL');
 
     let list = [];
+    let backendErr = null;
     try {
         list = await fetchModelsViaBackend(conn, norm.url);
-    } catch (backendErr) {
-        console.warn(`${LOG} 后端代理拉取失败，尝试直连`, backendErr);
-        list = await fetchModelsDirect(conn, norm.url, fmt);
+    } catch (err) {
+        backendErr = err;
+        console.warn(`${LOG} 后端代理拉取失败，尝试直连`, err);
+        try {
+            list = await fetchModelsDirect(conn, norm.url, fmt);
+        } catch (directErr) {
+            // 聚合两条通道的报错，便于定位是 key 还是端点问题
+            throw new Error(`后端通道：${backendErr.message}｜直连通道：${directErr.message}`);
+        }
     }
     conn.availableModels = list;
     conn.lastFetched = Date.now();
@@ -362,17 +369,18 @@ async function fetchModels(conn) {
 
 /** 首选：通过 ST 后端 /status 通道拉模型（服务器发起请求，无 CORS 问题） */
 async function fetchModelsViaBackend(conn, baseUrl) {
-    const body = conn.format === 'claude'
-        ? {
-            chat_completion_source: chat_completion_sources.CLAUDE,
-            reverse_proxy: baseUrl,
-            proxy_password: conn.apiKey || '',
-        }
-        : {
-            chat_completion_source: chat_completion_sources.CUSTOM,
-            custom_url: baseUrl,
-            custom_include_headers: conn.apiKey ? `Authorization: Bearer ${conn.apiKey}` : '',
-        };
+    if (!conn.apiKey) throw new Error('请先填写 API Key');
+    // 注意：/status 端点不支持 CLAUDE source（会落到 else 返回 400），故 Claude 也统一走 CUSTOM 源。
+    // 认证头按 YAML 加引号（与聊天路径 formatScalar 一致），防止 key 含 # / ": " 等 YAML 特殊字符时解析被截断导致 401。
+    const authHeaders = conn.format === 'claude'
+        // Claude：同时给 x-api-key 与 Authorization，兼容官方 Anthropic 与统一中转的 /models 鉴权习惯
+        ? `x-api-key: "${conn.apiKey}"\nAuthorization: "Bearer ${conn.apiKey}"\nanthropic-version: "2023-06-01"`
+        : `Authorization: "Bearer ${conn.apiKey}"`;
+    const body = {
+        chat_completion_source: chat_completion_sources.CUSTOM,
+        custom_url: baseUrl,
+        custom_include_headers: authHeaders,
+    };
     const resp = await fetch('/api/backends/chat-completions/status', {
         method: 'POST',
         headers: getRequestHeaders(),
@@ -383,6 +391,8 @@ async function fetchModelsViaBackend(conn, baseUrl) {
         throw new Error(`HTTP ${resp.status}：${text.slice(0, 200)}`);
     }
     const data = await resp.json();
+    // /status 在上游报错时返回 200 + { error: true }（不抛错），此处显式识别，避免静默回落直连
+    if (data?.error) throw new Error('后端状态检查失败（上游 /models 返回错误）');
     const models = Array.isArray(data?.data) ? data.data : Array.isArray(data?.models) ? data.models : [];
     const list = models.map(m => ({ id: m.id || m.name || m })).filter(m => m.id);
     if (!list.length) throw new Error('后端未返回模型列表');
