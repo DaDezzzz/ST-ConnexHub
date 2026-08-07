@@ -1,0 +1,8 @@
+# ConnexHub repo ignores
+
+# Desktop platform generated
+.testplatform/
+
+# Python bytecode caches
+__pycache__/
+*.pyc
