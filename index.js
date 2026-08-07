@@ -7,7 +7,7 @@
  *     永不动 SillyTavern 原生设置（oai_settings / 密钥库 / preset 等）。
  *  2. 双格式独立支持：OpenAI 兼容（/chat/completions）与 Claude（/messages），
  *     每种格式独立存储模型列表与拉取状态；切换活动连接时按其 format 决定请求链路。
- *  3. OAI 兼容格式：复用酒馆原生 CUSTOM 链路（generate_data.custom_url / custom_model
+ *  3. OAI 兼容格式：复用酒馆原生 CUSTOM 链路（generate_data.custom_url / model
  *     / custom_include_body / custom_exclude_body / custom_include_headers），
  *     不重写一套请求体组装——保证与上游 SillyTavern 的协议处理（tool calling、
  *     reasoning、json_schema、prompt post-processing 等）100% 一致。
@@ -199,7 +199,9 @@ function applyActiveConnection(generateData) {
 
         if (conn.format === 'openai') {
             generateData.custom_url = normalized.url;
-            if (model) generateData.custom_model = model;
+            // ST 后端只读 request.body.model（全库无 custom_model 读取），
+            // 必须覆盖 generate_data.model 才能让所选模型真正生效
+            if (model) generateData.model = model;
             // 自有 API Key 不走 ST 密钥库：通过 custom_include_headers 注入 Authorization
             // —— 真正 OAI 兼容服务都接受 Authorization 头，零 ST 原生字段依赖。
             if (conn.apiKey) {
