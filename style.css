@@ -181,7 +181,14 @@
     font-size: 0.9em;
     white-space: nowrap;
     overflow: hidden;
+    /* 模型通常以 "provider/model" 或版本后缀区分；省略时优先保留尾部。 */
+    direction: rtl;
+    text-align: left;
     text-overflow: ellipsis;
+}
+
+.cxh-dd-item > span {
+    direction: ltr;
 }
 .cxh-dd-item:hover {
     background: rgba(128, 128, 128, 0.25);
@@ -358,6 +365,11 @@
     .cxh-btn-fetch {
         min-height: 38px;
         padding: 0 10px;
+    }
+
+    /* 下拉已挂在 body，手机端可超出抽屉宽度至接近整个视口。 */
+    .cxh-model-dropdown {
+        max-width: calc(100vw - 16px);
     }
 
     /* 动作按钮：触控友好但不占满整行 */

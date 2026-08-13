@@ -509,13 +509,16 @@ function renderModelSelect(conn) {
     if (!list.length) {
         const empty = document.createElement('div');
         empty.className = 'cxh-dd-empty';
-        empty.textContent = '（尚未拉取模型，点「获取模型」）';
+        empty.textContent = '（尚未拉取模型，点「连接」）';
         frag.appendChild(empty);
     } else {
         for (const m of list) {
             const item = document.createElement('div');
             item.className = 'cxh-dd-item';
-            item.textContent = m.id;
+            item.title = m.id;
+            const label = document.createElement('span');
+            label.textContent = m.id;
+            item.appendChild(label);
             item.dataset.cxhModel = m.id;
             frag.appendChild(item);
         }
@@ -764,9 +767,15 @@ function bindEvents() {
         const PAD = 8;
         const r = wrap.getBoundingClientRect();
         const vh = window.innerHeight;
+        const vw = window.innerWidth;
         const spaceBelow = vh - r.bottom - PAD;
         const spaceAbove = r.top - PAD;
-        $dd.css({ left: `${r.left}px`, width: `${r.width}px` });
+        // 手机端的输入框会被箭头和操作按钮挤窄；下拉已挂到 body，
+        // 因此可安全扩到视口可用宽度，避免被 API 抽屉的边界裁剪。
+        const isMobile = window.matchMedia('(max-width: 1000px)').matches;
+        const width = isMobile ? Math.min(vw - PAD * 2, 640) : r.width;
+        const left = isMobile ? Math.max(PAD, Math.min(r.left, vw - width - PAD)) : r.left;
+        $dd.css({ left: `${left}px`, width: `${width}px` });
         if (spaceBelow >= MIN_H) {
             $dd.css({ top: `${r.bottom + 2}px`, bottom: 'auto', maxHeight: `${spaceBelow}px` });
         } else if (spaceAbove >= MIN_H) {
