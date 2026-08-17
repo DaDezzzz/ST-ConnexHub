@@ -190,7 +190,8 @@
 .cxh-dd-item > span {
     direction: ltr;
 }
-.cxh-dd-item:hover {
+.cxh-dd-item:hover,
+.cxh-dd-item-active {
     background: rgba(128, 128, 128, 0.25);
 }
 
