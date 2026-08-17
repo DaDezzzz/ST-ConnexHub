@@ -500,30 +500,65 @@ function collectExcludeChecks() {
     return keys;
 }
 
-function renderModelSelect(conn) {
-    // 自绘下拉：候选列表渲染进 #cxh_model_dropdown；实际值始终从 #cxh_model_input 读
+// 当前下拉状态：完整模型数组保留在内存中，过滤结果不截断。
+let modelDropdownList = [];
+let modelDropdownMatches = [];
+let modelDropdownActiveIndex = -1;
+
+function modelSearchTokens(value) {
+    return String(value || '').trim().toLowerCase().split(/\\s+/).filter(Boolean);
+}
+
+function renderModelMatches(keyword = '', { resetActive = true } = {}) {
     const $dd = $('#cxh_model_dropdown');
     if (!$dd.length) return;
-    const list = conn?.availableModels || [];
+    const tokens = modelSearchTokens(keyword);
+    modelDropdownMatches = modelDropdownList.filter((model) => {
+        const id = String(model?.id || '').toLowerCase();
+        return tokens.every((token) => id.includes(token));
+    });
+    if (resetActive || modelDropdownActiveIndex >= modelDropdownMatches.length) {
+        modelDropdownActiveIndex = modelDropdownMatches.length ? 0 : -1;
+    }
     const frag = document.createDocumentFragment();
-    if (!list.length) {
+    if (!modelDropdownList.length) {
         const empty = document.createElement('div');
         empty.className = 'cxh-dd-empty';
         empty.textContent = '（尚未拉取模型，点「连接」）';
         frag.appendChild(empty);
+    } else if (!modelDropdownMatches.length) {
+        const empty = document.createElement('div');
+        empty.className = 'cxh-dd-empty';
+        empty.textContent = '没有匹配的模型，可继续手动输入';
+        frag.appendChild(empty);
     } else {
-        for (const m of list) {
+        for (const [index, model] of modelDropdownMatches.entries()) {
+            const id = String(model.id);
             const item = document.createElement('div');
-            item.className = 'cxh-dd-item';
-            item.title = m.id;
+            item.className = `cxh-dd-item${index === modelDropdownActiveIndex ? ' cxh-dd-item-active' : ''}`;
+            item.title = id;
+            item.dataset.cxhModel = id;
+            item.dataset.cxhIndex = String(index);
             const label = document.createElement('span');
-            label.textContent = m.id;
+            label.textContent = id;
             item.appendChild(label);
-            item.dataset.cxhModel = m.id;
             frag.appendChild(item);
         }
     }
     $dd.empty().append(frag);
+}
+
+function renderModelSelect(conn) {
+    modelDropdownList = Array.isArray(conn?.availableModels) ? conn.availableModels : [];
+    renderModelMatches($('#cxh_model_input').val() || '');
+}
+
+function selectActiveModel() {
+    const model = modelDropdownMatches[modelDropdownActiveIndex];
+    if (!model) return false;
+    $('#cxh_model_input').val(String(model.id));
+    $('#cxh_model_dropdown').hide();
+    return true;
 }
 
 function updateEndpointHint(conn) {
@@ -749,6 +784,7 @@ function bindEvents() {
             if (!item) return;
             $('#cxh_model_input').val(String(item.dataset.cxhModel || ''));
             ddEl.style.display = 'none';
+            modelDropdownActiveIndex = Number(item.dataset.cxhIndex || -1);
         });
         ddEl.dataset.cxhStopBound = '1';
     }
@@ -790,21 +826,35 @@ function bindEvents() {
         e.stopPropagation();
         const $dd = $('#cxh_model_dropdown');
         if ($dd.is(':visible')) { $dd.hide(); return; }
-        $dd.find('.cxh-dd-item').show(); // 展开时不过滤，显示全部
+        renderModelMatches($('#cxh_model_input').val() || '');
         $dd.show();
         positionModelDropdown();
     });
     // 输入时实时过滤（子串匹配，不区分大小写），且自动展开
     $(document).on('input.cxh', '#cxh_model_input', function () {
-        const kw = String($(this).val() || '').toLowerCase();
-        const $dd = $('#cxh_model_dropdown');
-        const $items = $dd.find('.cxh-dd-item');
-        if (!$items.length) return;
-        $items.each(function () {
-            $(this).toggle(!kw || String($(this).data('cxhModel')).toLowerCase().includes(kw));
-        });
-        $dd.show();
+        renderModelMatches($(this).val());
+        $('#cxh_model_dropdown').show();
         positionModelDropdown();
+    });
+    $(document).on('keydown.cxh', '#cxh_model_input', function (e) {
+        if (!modelDropdownMatches.length) {
+            if (e.key === 'Escape') $('#cxh_model_dropdown').hide();
+            return;
+        }
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+            e.preventDefault();
+            const delta = e.key === 'ArrowDown' ? 1 : -1;
+            modelDropdownActiveIndex = (modelDropdownActiveIndex + delta + modelDropdownMatches.length)
+                % modelDropdownMatches.length;
+            renderModelMatches($(this).val(), { resetActive: false });
+            const active = document.querySelector('.cxh-dd-item-active');
+            active?.scrollIntoView({ block: 'nearest' });
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            selectActiveModel();
+        } else if (e.key === 'Escape') {
+            $('#cxh_model_dropdown').hide();
+        }
     });
     // 点击面板外任意处收起（下拉已挂 body，需同时排除下拉自身）；滚动/窗口变化时收起
     $(document).on('click.cxh-dd', function (e) {
