@@ -505,14 +505,10 @@ let modelDropdownList = [];
 let modelDropdownMatches = [];
 let modelDropdownActiveIndex = -1;
 
-function modelSearchTokens(value) {
-    return String(value || '').trim().toLowerCase().split(/\\s+/).filter(Boolean);
-}
-
 function renderModelMatches(keyword = '', { resetActive = true } = {}) {
     const $dd = $('#cxh_model_dropdown');
     if (!$dd.length) return;
-    const tokens = modelSearchTokens(keyword);
+    const tokens = String(keyword || '').trim().toLowerCase().split(' ').filter(Boolean);
     modelDropdownMatches = modelDropdownList.filter((model) => {
         const id = String(model?.id || '').toLowerCase();
         return tokens.every((token) => id.includes(token));
@@ -550,7 +546,14 @@ function renderModelMatches(keyword = '', { resetActive = true } = {}) {
 
 function renderModelSelect(conn) {
     modelDropdownList = Array.isArray(conn?.availableModels) ? conn.availableModels : [];
-    renderModelMatches($('#cxh_model_input').val() || '');
+    // 更新候选数据时不把已选模型误当成搜索词；下拉默认准备完整列表。
+    renderModelMatches('');
+}
+
+function updateModelActiveItem() {
+    const items = document.querySelectorAll('#cxh_model_dropdown .cxh-dd-item');
+    items.forEach((item, index) => item.classList.toggle('cxh-dd-item-active', index === modelDropdownActiveIndex));
+    items[modelDropdownActiveIndex]?.scrollIntoView({ block: 'nearest' });
 }
 
 function selectActiveModel() {
@@ -826,9 +829,14 @@ function bindEvents() {
         e.stopPropagation();
         const $dd = $('#cxh_model_dropdown');
         if ($dd.is(':visible')) { $dd.hide(); return; }
-        renderModelMatches($('#cxh_model_input').val() || '');
+        // 箭头代表浏览全部；输入事件才代表按关键词搜索。
+        renderModelMatches('');
+        const currentModel = String($('#cxh_model_input').val() || '');
+        const selectedIndex = modelDropdownMatches.findIndex((model) => String(model.id) === currentModel);
+        if (selectedIndex >= 0) modelDropdownActiveIndex = selectedIndex;
         $dd.show();
         positionModelDropdown();
+        updateModelActiveItem();
     });
     // 输入时实时过滤（子串匹配，不区分大小写），且自动展开
     $(document).on('input.cxh', '#cxh_model_input', function () {
@@ -846,9 +854,7 @@ function bindEvents() {
             const delta = e.key === 'ArrowDown' ? 1 : -1;
             modelDropdownActiveIndex = (modelDropdownActiveIndex + delta + modelDropdownMatches.length)
                 % modelDropdownMatches.length;
-            renderModelMatches($(this).val(), { resetActive: false });
-            const active = document.querySelector('.cxh-dd-item-active');
-            active?.scrollIntoView({ block: 'nearest' });
+            updateModelActiveItem();
         } else if (e.key === 'Enter') {
             e.preventDefault();
             selectActiveModel();
