@@ -296,6 +296,11 @@
     border-radius: 4px;
     border-left: 3px solid transparent;
     word-break: break-all; /* 长错误文本/URL 窄面板内可换行 */
+    max-height: calc(1.5em * 3);
+    overflow: hidden;
+    display: -webkit-box;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 3;
 }
 .cxh-status:empty { display: none; }
 /* 高对比配色：亮色文字 + 同色系浅底 + 左侧色条，深色主题下清晰可辨 */
