@@ -587,7 +587,9 @@ function collectFromEditor() {
 function setStatus(text, kind = 'info') {
     const $s = $('#cxh_status');
     if (!$s.length) return;
-    $s.text(text).attr('data-kind', kind);
+    const fullText = String(text ?? '');
+    // 视觉上限制最多三行，title 保留完整文本供鼠标悬停查看。
+    $s.text(fullText).attr({ 'data-kind': kind, title: fullText });
 }
 
 // ── 事件绑定（全部 document 委托） ────────────────────────────
@@ -877,7 +879,7 @@ function bindEvents() {
         setStatus('发送 "hi" 测试中…');
         try {
             const reply = await sendTestMessage(conn);
-            setStatus(`✓ 连接成功，回复：${reply.slice(0, 80)}`, 'ok');
+            setStatus(`✓ 连接成功，回复：${reply}`, 'ok');
         } catch (err) {
             setStatus(`✗ ${err.message}`, 'err');
         }
