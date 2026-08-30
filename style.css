@@ -317,7 +317,8 @@
 
 .cxh-check-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+    /* 给长参数名预留复选框和间距，避免 presence/frequency_penalty 被挤压。 */
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
     gap: 4px 10px;
     margin: 4px 0 8px;
 }
@@ -326,10 +327,20 @@
     display: flex;
     align-items: center;
     gap: 6px;
+    min-width: 0;
     font-size: 0.85em;
     font-family: var(--monoFontFamily, monospace);
     cursor: pointer;
     user-select: none;
+}
+
+.cxh-check-item input {
+    flex: 0 0 auto;
+}
+
+.cxh-check-item span {
+    min-width: 0;
+    overflow-wrap: anywhere;
 }
 
 /* ── 手机端适配 ─────────────────────────────── */
@@ -397,6 +408,13 @@
     }
 
     .cxh-check-grid {
-        grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+        /* 窄屏优先保证完整可读；参数较多时纵向排列。 */
+        grid-template-columns: minmax(0, 1fr);
+        gap: 6px;
+    }
+
+    .cxh-check-item {
+        align-items: flex-start;
+        line-height: 1.35;
     }
 }
