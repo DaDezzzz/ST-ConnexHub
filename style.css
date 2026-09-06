@@ -295,14 +295,89 @@
     padding: 6px 10px;
     border-radius: 4px;
     border-left: 3px solid transparent;
-    word-break: break-all; /* 长错误文本/URL 窄面板内可换行 */
-    max-height: calc(1.5em * 3);
-    overflow: hidden;
-    display: -webkit-box;
-    -webkit-box-orient: vertical;
-    -webkit-line-clamp: 3;
 }
-.cxh-status:empty { display: none; }
+.cxh-status:empty,
+.cxh-status[data-empty] { display: none; }
+
+/* 折叠态：最多两行，超出部分裁掉；箭头落在第二行行尾 */
+.cxh-status .cxh-status-text {
+    position: relative;
+    /* 保留换行符，便于多行报错原样展示 */
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    max-height: calc(1.5em * 2);
+    overflow: hidden;
+}
+
+/* 仅在真的超过两行时，用右浮动在「第二行」行尾挖出箭头的位置。
+   margin-top 把浮动块下推一行 → 第一行文字仍占满宽度，只有第二行末尾让出 22px，
+   箭头因此正好压在第二行行尾且不会盖住文字。 */
+.cxh-status.cxh-status-overflow .cxh-status-text::before {
+    content: '';
+    float: right;
+    width: 22px;
+    height: 1.5em;
+    margin-top: 1.5em;
+}
+
+.cxh-status.cxh-status-expanded .cxh-status-text {
+    max-height: none;
+    overflow: visible;
+    user-select: text;
+}
+
+.cxh-status.cxh-status-expanded .cxh-status-text::before {
+    display: none;
+}
+
+/* 展开态：在正文末尾留出一个行内空位，箭头贴在最后一行行尾 */
+.cxh-status.cxh-status-expanded .cxh-status-text::after {
+    content: '';
+    display: inline-block;
+    width: 22px;
+    height: 1em;
+    vertical-align: -0.15em;
+}
+
+/* 展开/收起箭头：贴在可见区域右下角 = 折叠时第二行行尾、展开时最后一行行尾 */
+.cxh-status .cxh-status-toggle {
+    display: none;
+    position: absolute;
+    right: 0;
+    bottom: 0;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 1.5em;
+    border-radius: 3px;
+    cursor: pointer;
+    opacity: 0.7;
+    color: inherit;
+    transition: opacity 0.15s ease, background 0.15s ease;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+}
+
+.cxh-status.cxh-status-overflow .cxh-status-toggle,
+.cxh-status.cxh-status-expanded .cxh-status-toggle {
+    display: inline-flex;
+}
+
+.cxh-status .cxh-status-toggle:hover {
+    opacity: 1;
+    background: rgba(128, 128, 128, 0.25);
+}
+
+.cxh-status .cxh-status-toggle i {
+    font-size: 0.8em;
+    line-height: 1;
+    transition: transform 0.2s ease;
+}
+
+.cxh-status.cxh-status-expanded .cxh-status-toggle i {
+    transform: rotate(180deg);
+}
 /* 高对比配色：亮色文字 + 同色系浅底 + 左侧色条，深色主题下清晰可辨 */
 .cxh-status[data-kind="ok"] { background: rgba(74, 222, 128, 0.12); border-left-color: #4ade80; color: #4ade80; }
 .cxh-status[data-kind="err"] { background: rgba(248, 113, 113, 0.12); border-left-color: #f87171; color: #f87171; }
@@ -411,6 +486,19 @@
         /* 窄屏优先保证完整可读；参数较多时纵向排列。 */
         grid-template-columns: minmax(0, 1fr);
         gap: 6px;
+    }
+
+    /* 状态条展开箭头：触控目标加宽（高度仍与行高一致，保证贴在行尾） */
+    .cxh-status .cxh-status-toggle {
+        width: 26px;
+    }
+
+    .cxh-status.cxh-status-overflow .cxh-status-text::before {
+        width: 30px;
+    }
+
+    .cxh-status.cxh-status-expanded .cxh-status-text::after {
+        width: 30px;
     }
 
     .cxh-check-item {

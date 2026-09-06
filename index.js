@@ -125,6 +125,23 @@ function parseYamlList(text) {
     return out;
 }
 
+/**
+ * 上游错误正文清洗：去掉 HTML 标签噪音、压缩空白，保留尽量完整的文本。
+ * 状态条支持展开查看全文，故上限放宽到 4000 字符（原 200 会把关键信息截没）。
+ */
+function briefError(text, limit = 4000) {
+    let s = String(text ?? '').trim();
+    if (!s) return '';
+    // 上游返回整页 HTML 时（如网关错误页）只留可读文字
+    if (/^\s*<(!doctype|html)/i.test(s)) {
+        s = s.replace(/<script[\s\S]*?<\/script>/gi, '')
+            .replace(/<style[\s\S]*?<\/style>/gi, '')
+            .replace(/<[^>]+>/g, ' ');
+    }
+    s = s.replace(/[ \t]+/g, ' ').replace(/\n{3,}/g, '\n\n').trim();
+    return s.length > limit ? `${s.slice(0, limit)}…（已截断，共 ${s.length} 字符）` : s;
+}
+
 // ── 关键：generate 请求注入（CHAT_COMPLETION_SETTINGS_READY） ─────
 
 const PROTECTED_KEYS = new Set([
@@ -390,7 +407,7 @@ async function fetchModelsViaBackend(conn, baseUrl) {
     });
     if (!resp.ok) {
         const text = await resp.text().catch(() => '');
-        throw new Error(`HTTP ${resp.status}：${text.slice(0, 200)}`);
+        throw new Error(`HTTP ${resp.status}：${briefError(text)}`);
     }
     const data = await resp.json();
     // /status 在上游报错时返回 200 + { error: true }（不抛错），此处显式识别，避免静默回落直连
@@ -416,7 +433,7 @@ async function fetchModelsDirect(conn, baseUrl, fmt) {
     const resp = await fetch(url, { method: 'GET', headers });
     if (!resp.ok) {
         const text = await resp.text().catch(() => '');
-        throw new Error(`HTTP ${resp.status}：${text.slice(0, 200)}`);
+        throw new Error(`HTTP ${resp.status}：${briefError(text)}`);
     }
     const data = await resp.json();
     const models = Array.isArray(data?.data) ? data.data : Array.isArray(data) ? data : [];
@@ -584,12 +601,62 @@ function collectFromEditor() {
     };
 }
 
+/**
+ * 状态条：默认折叠为两行，文本超出两行时右下角出现向下箭头，点击展开全文。
+ * 结构固定为 .cxh-status > (.cxh-status-text + .cxh-status-toggle)，
+ * 折叠/展开只切类，不重建 DOM，避免展开态被下一次 setStatus 以外的重排打断。
+ */
 function setStatus(text, kind = 'info') {
     const $s = $('#cxh_status');
     if (!$s.length) return;
+    const el = $s[0];
     const fullText = String(text ?? '');
-    // 视觉上限制最多三行，title 保留完整文本供鼠标悬停查看。
-    $s.text(fullText).attr({ 'data-kind': kind, title: fullText });
+    el.setAttribute('data-kind', kind);
+    // 每条新消息都回到折叠态，避免上一条展开状态残留
+    el.classList.remove('cxh-status-expanded', 'cxh-status-overflow');
+    el.textContent = '';
+    if (!fullText) {
+        el.setAttribute('data-empty', '1');
+        el.removeAttribute('title');
+        return;
+    }
+    el.removeAttribute('data-empty');
+    const textEl = document.createElement('div');
+    textEl.className = 'cxh-status-text';
+    const toggle = document.createElement('div');
+    toggle.className = 'cxh-status-toggle';
+    toggle.setAttribute('role', 'button');
+    toggle.setAttribute('tabindex', '0');
+    toggle.title = '展开/收起完整信息';
+    const icon = document.createElement('i');
+    icon.className = 'fa-solid fa-chevron-down';
+    toggle.appendChild(icon);
+    // 箭头必须排在文本节点之前：float 元素只让「其后」的行内内容绕排，
+    // 配合 CSS ::before 占位，箭头才会落在第二行行尾。
+    textEl.appendChild(toggle);
+    textEl.appendChild(document.createTextNode(fullText));
+    el.appendChild(textEl);
+    // 完整文本另存一份，避免展开/收起时从 DOM 反推
+    el.dataset.cxhFull = fullText;
+    // title 仅在折叠时有意义；展开后由正文承载，避免长 tooltip 遮挡
+    el.title = fullText;
+    // 布局完成后再测量是否超过两行（抽屉未展开时高度为 0，由 ResizeObserver 补测）
+    requestAnimationFrame(() => updateStatusOverflow(el));
+}
+
+/** 测量状态文本是否溢出两行，决定是否显示行尾展开箭头 */
+function updateStatusOverflow(el) {
+    const node = el || document.getElementById('cxh_status');
+    if (!node) return;
+    const textEl = node.querySelector('.cxh-status-text');
+    if (!textEl) return;
+    // 展开态下高度已放开，无从测量；箭头保持可见以便收起
+    if (node.classList.contains('cxh-status-expanded')) return;
+    // 先按「无箭头占位」测量：不溢出就彻底不显示箭头
+    node.classList.remove('cxh-status-overflow');
+    if (textEl.scrollHeight - textEl.clientHeight <= 1) return;
+    // 溢出 → 加占位再显示箭头（占位会让文本更早折行，仍然溢出，不会抖动）
+    node.classList.add('cxh-status-overflow');
 }
 
 // ── 事件绑定（全部 document 委托） ────────────────────────────
@@ -660,11 +727,19 @@ async function sendTestMessage(conn) {
         body: JSON.stringify(body),
     });
     const text = await resp.text().catch(() => '');
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}：${text.slice(0, 200)}`);
+    if (!resp.ok) throw new Error(`HTTP ${resp.status}：${briefError(text)}`);
     let reply = '';
     let thinking = '';
+    let data = null;
     try {
-        const data = JSON.parse(text);
+        data = JSON.parse(text);
+    } catch { /* 非 JSON 响应 */ }
+    // 酒馆后端在上游失败时常返回 200 + { error: { message } }，需显式识别并原样抛出
+    if (data?.error) {
+        const msg = typeof data.error === 'string' ? data.error : (data.error.message || JSON.stringify(data.error));
+        throw new Error(briefError(msg) || '上游返回未知错误');
+    }
+    if (data) {
         // OAI 格式正文
         reply = data?.choices?.[0]?.message?.content ?? '';
         // Claude 格式：content 是块数组，thinking 块可能排在 text 块前面，需按类型提取
@@ -676,14 +751,41 @@ async function sendTestMessage(conn) {
         if (!reply && !thinking) {
             thinking = data?.choices?.[0]?.message?.reasoning_content || '';
         }
-    } catch { /* 非 JSON 响应 */ }
+    }
     // 思考型模型 max_tokens 全被 thinking 吃掉属正常 —— HTTP 200 + 有 thinking 即视为连接成功
     if (!reply && thinking) return `[思考] ${thinking.slice(0, 80)}`;
-    if (!reply) throw new Error(`响应异常：${text.slice(0, 200) || '(空)'}`);
+    if (!reply) throw new Error(`响应异常：${briefError(text) || '(空)'}`);
     return reply;
 }
 
 function bindEvents() {
+    // 状态条展开/收起（委托绑定，DOM 重建后依然有效）
+    $(document).on('click.cxh', '#cxh_status .cxh-status-toggle', function (e) {
+        e.stopPropagation();
+        const el = document.getElementById('cxh_status');
+        if (!el) return;
+        el.classList.toggle('cxh-status-expanded');
+        if (el.classList.contains('cxh-status-expanded')) {
+            el.removeAttribute('title'); // 展开后正文已完整可见
+        } else {
+            el.title = el.dataset.cxhFull || '';
+            updateStatusOverflow(el);
+        }
+    });
+    $(document).on('keydown.cxh', '#cxh_status .cxh-status-toggle', function (e) {
+        if (e.key === 'Enter' || e.key === ' ') {
+            e.preventDefault();
+            $(this).trigger('click');
+        }
+    });
+    // 面板宽度变化（抽屉展开、窗口缩放）会改变折行数，需重新测量是否溢出
+    const statusEl = document.getElementById('cxh_status');
+    if (statusEl && !statusEl.dataset.cxhRoBound && typeof ResizeObserver !== 'undefined') {
+        const ro = new ResizeObserver(() => updateStatusOverflow(statusEl));
+        ro.observe(statusEl);
+        statusEl.dataset.cxhRoBound = '1';
+    }
+
     // 选中即生效：切换下拉 = 切换当前连接
     $(document).on('change.cxh', '#cxh_conn_select', function () {
         const id = String($(this).val() || '');
