@@ -124,5 +124,19 @@
                 <div id="cxh_btn_test" class="menu_button cxh-action-btn"><i class="fa-solid fa-comment-dots"></i> 测试连接</div>
             </div>
         </div>
+
+        <details id="cxh_diagnostics" class="cxh-card cxh-diagnostics">
+            <summary>连接诊断（输出中断排查）</summary>
+            <label class="cxh-diagnostics-switch">
+                <input id="cxh_diagnostics_enabled" type="checkbox" />
+                记录请求 / 响应摘要并保存到本机
+            </label>
+            <small class="cxh-hint">默认关闭，开启后记住此浏览器的开关。记录模型、参数、耗时、结束原因及脱敏错误；不记录聊天正文、回复正文、思考或认证请求头。最多保留 30 条、7 天，可导出 JSON。同站点脚本可访问，导出分享前请检查，共用设备用完请清空。</small>
+            <div class="cxh-diagnostics-actions">
+                <button id="cxh_diagnostics_export" type="button" class="menu_button" disabled>导出日志</button>
+                <button id="cxh_diagnostics_clear" type="button" class="menu_button" disabled>清空日志</button>
+            </div>
+            <small id="cxh_diagnostics_status" class="cxh-hint" role="status">已关闭 · 尚无记录</small>
+        </details>
     </div>
 </div>
