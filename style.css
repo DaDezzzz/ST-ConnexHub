@@ -418,6 +418,32 @@
     overflow-wrap: anywhere;
 }
 
+.cxh-diagnostics summary {
+    cursor: pointer;
+    font-size: 0.9em;
+    font-weight: 600;
+    padding: 4px 0;
+}
+
+.cxh-diagnostics-switch {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    margin: 10px 0 6px;
+    font-size: 0.9em;
+}
+
+.cxh-diagnostics-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.cxh-diagnostics-actions button {
+    min-height: 38px;
+    width: auto;
+}
+
 /* ── 手机端适配 ─────────────────────────────── */
 
 @media screen and (max-width: 1000px) {

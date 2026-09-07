@@ -34,6 +34,7 @@ import { SECRET_KEYS, deleteSecret, secret_state } from '../../../secrets.js';
 const LOG = '[ConnexHub]';
 const NS = 'connexHub';
 const SECRET_LABEL_TAG = 'ConnexHub'; // uninstall 时按此 label 标识清理
+let diagnosticsPanel = null;
 
 /** 格式定义 */
 const FORMATS = {
@@ -340,6 +341,14 @@ async function syncSourceForConn(id, { quiet = true } = {}) {
 
 export async function cleanupPluginData() {
     try {
+        try { diagnosticsPanel?.dispose(); }
+        catch { console.warn(`${LOG} diagnostics cleanup failed; continuing settings cleanup`); }
+        diagnosticsPanel = null;
+        // 即使面板加载失败，卸载仍尝试清除本机独立日志，不触碰原生设置。
+        try {
+            localStorage.removeItem('connexHub.diagnostics.logs.v1');
+            localStorage.removeItem('connexHub.diagnostics.enabled.v1');
+        } catch { /* 浏览器禁用存储时无需阻塞其余清理。 */ }
         // 1. 删除酒馆密钥库里所有 ConnexHub 标记的条目
         try {
             const list = Array.isArray(secret_state[SECRET_KEYS.CLAUDE]) ? secret_state[SECRET_KEYS.CLAUDE] : [];
@@ -1075,6 +1084,28 @@ jQuery(async () => {
     // 请求注入钩子
     eventSource.on(event_types.CHAT_COMPLETION_SETTINGS_READY, applyActiveConnection);
     eventSource.makeLast(event_types.CHAT_COMPLETION_SETTINGS_READY, applyActiveConnection);
+
+    // 诊断模块加载失败不能阻止原来的聊天注入钩子生效。
+    try {
+        const { mountDiagnosticsPanel } = await import('./diagnostics-panel.js');
+        diagnosticsPanel = mountDiagnosticsPanel(document.getElementById('cxh_diagnostics'), {
+            shouldRecord(body) {
+                const store = getStore();
+                if (!store.enabled || store.viewMode !== 'cxh' || main_api !== 'openai') return false;
+                const conn = draftConn();
+                if (!String(conn.endpoint || '').trim()) return false;
+                const format = FORMATS[conn.format];
+                if (!format) return false;
+                const source = conn.format === 'claude' ? chat_completion_sources.CLAUDE : chat_completion_sources.CUSTOM;
+                const endpoint = conn.format === 'claude' ? body.reverse_proxy : body.custom_url;
+                return body.chat_completion_source === source && endpoint === format.normalizeEndpoint(conn.endpoint).url;
+            },
+            getSecrets: () => [draftConn().apiKey, ...getConnections().map(conn => conn.apiKey)],
+        });
+    } catch {
+        $('#cxh_diagnostics_status').text('诊断模块加载失败，聊天功能不受影响。请完整更新扩展后刷新。');
+        $('#cxh_diagnostics_enabled').prop('disabled', true);
+    }
 
     console.log(`${LOG} loaded · ${getConnections().length} connections · view=${getStore().viewMode}`);
 });
