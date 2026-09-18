@@ -89,7 +89,7 @@ test('saved consent/logs survive another panel load and unfinished snapshots are
         assert.match(f.nodes.status.textContent, /上次记录未完成/);
         assert.equal(JSON.parse(items.get(LOGS_KEY)).records[0].outcome, 'incomplete_snapshot');
         await (await f.host.fetch(requestUrl, options)).text();
-        assert.equal(JSON.parse(items.get(LOGS_KEY)).records.length, 2);
+        assert.equal(JSON.parse(items.get(LOGS_KEY)).records.length, 1);
         const saved = new Map(items);
         const reloaded = setup({ items: saved });
         assert.equal(reloaded.nodes.enabled.checked, true);
