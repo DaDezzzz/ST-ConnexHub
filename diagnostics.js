@@ -21,6 +21,12 @@ const USAGE_KEYS = ['prompt_tokens', 'completion_tokens', 'total_tokens', 'input
 const FINISH_REASONS = new Set(['stop', 'length', 'end_turn', 'max_tokens', 'tool_calls',
     'function_call', 'tool_use', 'stop_sequence', 'pause_turn', 'refusal', 'content_filter', 'safety']);
 
+function clonePlain(value) {
+    return typeof globalThis.structuredClone === 'function'
+        ? globalThis.structuredClone(value)
+        : JSON.parse(JSON.stringify(value));
+}
+
 function parameters(body) {
     const result = {};
     for (const key of NUMBER_PARAMS) {
@@ -301,10 +307,11 @@ function responseInspector(record, stream, expectedStream, clean, finish, warnin
 
 /** Opt-in observer; persistence is delegated to the panel, never a network endpoint. */
 export function createDiagnostics({ host = globalThis, baseUrl = globalThis.location?.href,
-    shouldRecord = () => false, getSecrets = () => [], onChange = () => {}, capacity = 30,
+    shouldRecord = () => false, getSecrets = () => [], onChange = () => {}, capacity = 4,
     initialRecords = [], clock = () => performance.now() } = {}) {
-    const limit = Math.max(1, Math.min(50, Math.trunc(capacity) || 30));
-    const records = structuredClone(initialRecords.slice(-limit));
+    // Keep a few concurrent observations in memory, while persistence/export retain only the latest one.
+    const limit = Math.max(2, Math.min(8, Math.trunc(capacity) || 4));
+    const records = clonePlain(initialRecords.slice(-limit));
     const active = new Map();
     let enabled = false;
     let wrapper = null;
@@ -548,7 +555,7 @@ export function createDiagnostics({ host = globalThis, baseUrl = globalThis.loca
     }
     function getRecords() {
         return records.map(record => {
-            const copy = structuredClone(record);
+            const copy = clonePlain(record);
             const observation = active.get(record.id);
             if (observation) {
                 copy.durationMs = Math.round(now() - observation.start);
@@ -562,10 +569,11 @@ export function createDiagnostics({ host = globalThis, baseUrl = globalThis.loca
         get enabled() { return enabled; },
         get count() { return records.length; },
         exportJson() {
+            const latest = getRecords().slice(-1);
             return JSON.stringify({ schemaVersion: 1, exportedAt: new Date().toISOString(),
                 scope: 'ConnexHub browser-to-SillyTavern diagnostics; provider-side transformations are not observable',
-                retention: `Last ${limit} request summaries; panel may persist locally for up to 7 days; no raw bodies or authentication headers`,
-                records: getRecords() }, null, 2);
+                retention: 'Latest request summary; local storage resets daily at 06:00 local time; no raw bodies or authentication headers',
+                records: latest }, null, 2);
         },
     };
 }

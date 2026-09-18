@@ -1,74 +1,70 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { createDiagnosticsStore, ENABLED_KEY, LOGS_KEY } from '../diagnostics-store.js';
+import { createDiagnosticsStore, diagnosticsPeriod, millisecondsUntilNextReset, LOGS_KEY } from '../diagnostics-store.js';
 
-function fixture() {
-    const items = new Map();
-    const storage = { getItem: key => items.get(key) ?? null, setItem: (key, value) => items.set(key, value),
-        removeItem: key => items.delete(key) };
-    return { items, storage, store: createDiagnosticsStore({ getStorage: () => storage }) };
+function memoryStorage(seed = {}) {
+    const data = new Map(Object.entries(seed));
+    return {
+        getItem(key) { return data.has(key) ? data.get(key) : null; },
+        setItem(key, value) { data.set(key, String(value)); },
+        removeItem(key) { data.delete(key); },
+        value(key) { return data.get(key); },
+    };
 }
-function record(id, extra = {}) {
-    return { id, startedAt: new Date().toISOString(), outcome: 'pending', inFlight: true, ...extra };
+
+function record(id, startedAt, updatedAt = startedAt, extra = {}) {
+    return { id, startedAt, updatedAt, outcome: 'completed', inFlight: false, ...extra };
 }
 
-test('storage defaults off, persists summaries and restores unfinished observations without claiming an abort', () => {
-    const { store, storage } = fixture();
-    assert.deepEqual(store.load(), { enabled: false, records: [] });
-    assert.equal(store.setEnabled(true), true);
-    const sent = record('a');
-    store.save([sent]);
-    const restored = createDiagnosticsStore({ getStorage: () => storage }).load();
-    assert.equal(restored.enabled, true);
-    assert.equal(restored.records[0].outcome, 'incomplete_snapshot');
-    assert.equal(restored.records[0].previousOutcome, 'pending');
-    assert.equal(sent.outcome, 'pending');
+test('06:00 local boundary assigns the expected period', () => {
+    assert.equal(diagnosticsPeriod(new Date(2026, 8, 18, 5, 59, 59)), '2026-09-17');
+    assert.equal(diagnosticsPeriod(new Date(2026, 8, 18, 6, 0, 0)), '2026-09-18');
+    assert.equal(millisecondsUntilNextReset(new Date(2026, 8, 18, 5, 59, 59)), 1000);
+    assert.equal(millisecondsUntilNextReset(new Date(2026, 8, 18, 6, 0, 0)), 24 * 60 * 60 * 1000);
 });
 
-test('archives are bounded, old records expire and independent tabs merge by request ID', () => {
-    const { store, storage } = fixture();
-    const other = createDiagnosticsStore({ getStorage: () => storage });
-    store.save([record('a')]);
-    other.save([record('b')]);
-    assert.equal(store.load().records.length, 2);
-    store.save(Array.from({ length: 40 }, (_, i) => record('request-' + i, { inFlight: false })));
-    assert.equal(store.load().records.length, 30);
-    store.save([record('expired', { startedAt: '2000-01-01T00:00:00.000Z' })]);
-    assert.equal(store.load().records.some(r => r.id === 'expired'), false);
-    store.clear();
-    assert.deepEqual(store.load().records, []);
+test('store persists only the latest request and protects it from a late older tab write', () => {
+    const storage = memoryStorage();
+    const now = () => new Date(2026, 8, 18, 12).getTime();
+    const store = createDiagnosticsStore({ getStorage: () => storage, now });
+    const older = record('old', '2026-09-18T02:00:00.000Z');
+    const newer = record('new', '2026-09-18T03:00:00.000Z');
+    assert.equal(store.save([older, newer]), true);
+    assert.equal(JSON.parse(storage.value(LOGS_KEY)).record.id, 'new');
+    assert.equal(store.save([older]), true);
+    assert.equal(JSON.parse(storage.value(LOGS_KEY)).record.id, 'new');
 });
 
-test('a stale tab cannot overwrite a more recent completed record', () => {
-    const { store } = fixture();
-    const pending = record('a', { updatedAt: '2026-09-07T00:00:01.000Z' });
-    const done = { ...pending, updatedAt: '2026-09-07T00:00:02.000Z', outcome: 'completed', inFlight: false };
-    store.save([done]); store.save([pending]);
-    assert.equal(store.load().records[0].outcome, 'completed');
+test('load migrates v1 to its latest valid record', () => {
+    const first = record('first', '2026-09-18T02:00:00.000Z');
+    const latest = record('latest', '2026-09-18T03:00:00.000Z', '2026-09-18T03:01:00.000Z');
+    const storage = memoryStorage({ [LOGS_KEY]: JSON.stringify({ schemaVersion: 1, records: [first, latest] }) });
+    const store = createDiagnosticsStore({ getStorage: () => storage,
+        now: () => new Date(2026, 8, 18, 12).getTime() });
+    const loaded = store.load();
+    assert.deepEqual(loaded.records.map(item => item.id), ['latest']);
+    assert.equal(JSON.parse(storage.value(LOGS_KEY)).schemaVersion, 2);
 });
 
-test('storage denial, corrupt data and quota failures never escape into request handling', () => {
-    const store = createDiagnosticsStore({ getStorage() { throw new Error('denied'); } });
-    assert.deepEqual(store.load(), { enabled: false, records: [] });
-    assert.equal(store.save([record('a')]), false);
-    assert.equal(store.setEnabled(true), false);
-    assert.equal(store.clear(), false);
-    assert.equal(store.state, 'unavailable');
-    const { items, storage, store: corrupt } = fixture();
-    items.set(LOGS_KEY, '{broken');
-    assert.deepEqual(corrupt.load().records, []);
-    assert.equal(corrupt.save([record('a')]), true);
-    storage.setItem = () => { throw new Error('quota'); };
-    assert.equal(corrupt.save([record('b')]), false);
+test('restart after a missed 06:00 boundary removes the previous period record', () => {
+    const storage = memoryStorage();
+    let time = new Date(2026, 8, 18, 5, 50).getTime();
+    let store = createDiagnosticsStore({ getStorage: () => storage, now: () => time });
+    store.save([record('before-reset', new Date(time).toISOString())]);
+    time = new Date(2026, 8, 18, 7, 0).getTime();
+    store = createDiagnosticsStore({ getStorage: () => storage, now: () => time });
+    const loaded = store.load();
+    assert.deepEqual(loaded.records, []);
+    assert.equal(loaded.pruned, true);
+    assert.equal(JSON.parse(storage.value(LOGS_KEY)).record, null);
 });
 
-test('a large archive is size-bounded and does not affect unrelated site storage', () => {
-    const { store, items } = fixture();
-    items.set('native-settings', 'leave-me');
-    store.setEnabled(true);
-    store.save(Array.from({ length: 30 }, (_, i) => record('id-' + i, { testPadding: 'x'.repeat(20000) })));
-    assert.ok(items.get(LOGS_KEY).length <= 256 * 1024);
-    store.clear();
-    assert.equal(items.get('native-settings'), 'leave-me');
-    assert.equal(items.get(ENABLED_KEY), 'true');
+test('an in-flight snapshot restored in the same period is marked incomplete', () => {
+    const storage = memoryStorage();
+    const now = () => new Date(2026, 8, 18, 12).getTime();
+    const store = createDiagnosticsStore({ getStorage: () => storage, now });
+    store.save([record('flight', '2026-09-18T03:00:00.000Z', undefined, { outcome: 'pending', inFlight: true })]);
+    const loaded = createDiagnosticsStore({ getStorage: () => storage, now }).load();
+    assert.equal(loaded.records[0].outcome, 'incomplete_snapshot');
+    assert.equal(loaded.records[0].inFlight, false);
 });

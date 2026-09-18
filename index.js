@@ -35,6 +35,13 @@ const LOG = '[ConnexHub]';
 const NS = 'connexHub';
 const SECRET_LABEL_TAG = 'ConnexHub'; // uninstall 时按此 label 标识清理
 let diagnosticsPanel = null;
+const MODEL_RENDER_LIMIT = 200;
+
+function clonePlain(value) {
+    return typeof globalThis.structuredClone === 'function'
+        ? globalThis.structuredClone(value)
+        : JSON.parse(JSON.stringify(value));
+}
 
 /** 格式定义 */
 const FORMATS = {
@@ -94,7 +101,7 @@ const DEFAULT_CONNECTION = () => ({
 // ── 存储层 ──────────────────────────────────────────────────────
 
 function getStore() {
-    if (!extension_settings[NS]) extension_settings[NS] = structuredClone(DEFAULT_SETTINGS);
+    if (!extension_settings[NS]) extension_settings[NS] = clonePlain(DEFAULT_SETTINGS);
     if (!Array.isArray(extension_settings[NS].connections)) extension_settings[NS].connections = [];
     if (typeof extension_settings[NS].enabled !== 'boolean') extension_settings[NS].enabled = true;
     if (extension_settings[NS].viewMode !== 'native' && extension_settings[NS].viewMode !== 'cxh') extension_settings[NS].viewMode = 'cxh';
@@ -554,7 +561,7 @@ function renderModelMatches(keyword = '', { resetActive = true } = {}) {
         empty.textContent = '没有匹配的模型，可继续手动输入';
         frag.appendChild(empty);
     } else {
-        for (const [index, model] of modelDropdownMatches.entries()) {
+        for (const [index, model] of modelDropdownMatches.slice(0, MODEL_RENDER_LIMIT).entries()) {
             const id = String(model.id);
             const item = document.createElement('div');
             item.className = `cxh-dd-item${index === modelDropdownActiveIndex ? ' cxh-dd-item-active' : ''}`;
@@ -565,6 +572,12 @@ function renderModelMatches(keyword = '', { resetActive = true } = {}) {
             label.textContent = id;
             item.appendChild(label);
             frag.appendChild(item);
+        }
+        if (modelDropdownMatches.length > MODEL_RENDER_LIMIT) {
+            const more = document.createElement('div');
+            more.className = 'cxh-dd-empty';
+            more.textContent = `另有 ${modelDropdownMatches.length - MODEL_RENDER_LIMIT} 个结果，请继续输入筛选`;
+            frag.appendChild(more);
         }
     }
     $dd.empty().append(frag);
@@ -577,6 +590,7 @@ function renderModelSelect(conn) {
 }
 
 function updateModelActiveItem() {
+    if (modelDropdownActiveIndex >= MODEL_RENDER_LIMIT) modelDropdownActiveIndex = MODEL_RENDER_LIMIT - 1;
     const items = document.querySelectorAll('#cxh_model_dropdown .cxh-dd-item');
     items.forEach((item, index) => item.classList.toggle('cxh-dd-item-active', index === modelDropdownActiveIndex));
     items[modelDropdownActiveIndex]?.scrollIntoView({ block: 'nearest' });
@@ -827,7 +841,7 @@ function bindEvents() {
         const id = $('#cxh_conn_select').val();
         const src = getConn(id);
         if (!src) { setStatus('请先选择要复制的连接', 'err'); return; }
-        const dup = { ...structuredClone(src), id: DEFAULT_CONNECTION().id, name: `${src.name || '(未命名)'} 副本`, lastFetched: 0 };
+        const dup = { ...clonePlain(src), id: DEFAULT_CONNECTION().id, name: `${src.name || '(未命名)'} 副本`, lastFetched: 0 };
         getConnections().push(dup);
         saveSettingsDebounced();
         renderConnSelect();

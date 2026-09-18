@@ -1,5 +1,5 @@
 import { createDiagnostics } from './diagnostics.js';
-import { createDiagnosticsStore } from './diagnostics-store.js';
+import { createDiagnosticsStore, millisecondsUntilNextReset } from './diagnostics-store.js';
 
 const OUTCOMES = {
     pending: '请求进行中',
@@ -34,24 +34,47 @@ export function mountDiagnosticsPanel(root, { shouldRecord, getSecrets, host = g
     const status = root.querySelector('#cxh_diagnostics_status');
     if (!checkbox || !exportButton || !clearButton || !status) return null;
     const downloads = new Map();
+    let resetTimer = null;
     const store = createDiagnosticsStore({ getStorage });
     const restored = store.load();
     const logger = createDiagnostics({ host, baseUrl, shouldRecord, getSecrets,
         initialRecords: restored.records, onChange: persistAndRender });
 
     function persistAndRender() {
-        if (logger.count) store.save(logger.getRecords());
+        if (logger.count) store.save(logger.getRecords().slice(-1));
         render();
     }
 
     function render() {
         checkbox.checked = logger.enabled;
         exportButton.disabled = clearButton.disabled = logger.count === 0;
-        const latest = logger.getRecords().at(-1);
+        const records = logger.getRecords();
+        const latest = records[records.length - 1];
         const result = latest ? ` · 最近：${OUTCOMES[latest.outcome] || latest.outcome}` : '';
         const storage = store.state === 'unavailable'
-            ? '本机保存不可用，请关闭页面前导出' : '本机保存 · 最多 30 条 / 7 天';
-        status.textContent = `${logger.enabled ? '记录中' : '已关闭'} · ${logger.count}/30 条 · ${storage}${result}`;
+            ? '本机保存不可用，请关闭页面前导出' : '仅保留最近一次 · 每日 06:00 清理';
+        status.textContent = `${logger.enabled ? '记录中' : '已关闭'} · ${storage}${result}`;
+    }
+
+    function clearExpired() {
+        if (!store.clearIfPeriodChanged()) return false;
+        logger.clear();
+        render();
+        return true;
+    }
+
+    function scheduleReset() {
+        if (resetTimer !== null) host.clearTimeout?.(resetTimer);
+        // Recalculate after every run so local DST/time changes do not accumulate interval drift.
+        resetTimer = host.setTimeout?.(() => {
+            clearExpired();
+            scheduleReset();
+        }, millisecondsUntilNextReset(new Date())) ?? null;
+    }
+
+    function resume() {
+        clearExpired();
+        scheduleReset();
     }
     function change(event) {
         if (event.target !== checkbox) return;
@@ -96,12 +119,15 @@ export function mountDiagnosticsPanel(root, { shouldRecord, getSecrets, host = g
     root.addEventListener('change', change);
     root.addEventListener('click', click);
     // Flush only safe metadata on page exit; do not stop or cancel the underlying stream.
-    const flush = () => { if (logger.count) store.save(logger.getRecords()); };
+    const flush = () => { if (logger.count) store.save(logger.getRecords().slice(-1)); };
     host.addEventListener?.('pagehide', flush);
+    host.addEventListener?.('pageshow', resume);
+    root.ownerDocument.addEventListener?.('visibilitychange', resume);
     if (restored.enabled) {
         try { logger.enable(); }
         catch { store.setEnabled(false); }
     }
+    scheduleReset();
     render();
     return {
         clear() { store.clear(); logger.clear(); },
@@ -109,6 +135,9 @@ export function mountDiagnosticsPanel(root, { shouldRecord, getSecrets, host = g
             root.removeEventListener('change', change);
             root.removeEventListener('click', click);
             host.removeEventListener?.('pagehide', flush);
+            host.removeEventListener?.('pageshow', resume);
+            root.ownerDocument.removeEventListener?.('visibilitychange', resume);
+            if (resetTimer !== null) host.clearTimeout?.(resetTimer);
             logger.disable();
             store.setEnabled(false);
             store.clear();

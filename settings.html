@@ -131,7 +131,7 @@
                 <input id="cxh_diagnostics_enabled" type="checkbox" />
                 记录请求 / 响应摘要并保存到本机
             </label>
-            <small class="cxh-hint">默认关闭，开启后记住此浏览器的开关。记录模型、参数、耗时、结束原因及脱敏错误；不记录聊天正文、回复正文、思考或认证请求头。最多保留 30 条、7 天，可导出 JSON。同站点脚本可访问，导出分享前请检查，共用设备用完请清空。</small>
+            <small class="cxh-hint">默认关闭，开启后记住此浏览器的开关。记录模型、参数、耗时、结束原因及脱敏错误；不记录聊天正文、回复正文、思考或认证请求头。仅保留最近一次请求，每天按本机时间 06:00 清空；若页面或服务当时未运行，会在下次启动或恢复页面时补清。可导出 JSON。同站点脚本可访问，导出分享前请检查。</small>
             <div class="cxh-diagnostics-actions">
                 <button id="cxh_diagnostics_export" type="button" class="menu_button" disabled>导出日志</button>
                 <button id="cxh_diagnostics_clear" type="button" class="menu_button" disabled>清空日志</button>
