@@ -57,7 +57,14 @@ function rewriteBlocker(ctx = getContext()) {
     // This ST version does not assign SWIPE_STATE.EDITING. Native messageEdit
     // hides the normal buttons and shows the edit controls instead.
     if (core.swipeState === SWIPE_STATE.EDITING
-        || document.querySelector('#chat .mes_edit_buttons:not([style*="display: none"])')
+        || [...document.querySelectorAll('#chat .mes_edit_buttons')].some(element => {
+            // The default state comes from the stylesheet (`display: none`), so the
+            // inline style is an empty string on every message. Treating that as
+            // "visible" marked the whole chat as being edited, which disabled the
+            // rewrite button and stalled the automatic queue forever.
+            const display = String(element.style?.display ?? '').trim().toLowerCase();
+            return display !== '' && display !== 'none';
+        })
         || document.querySelector('#chat :is(.edit_textarea, .reasoning_edit_textarea, .mes_edit_textarea)')) return '正在编辑消息';
     if (settings().mvu && mvuBusy()) return '正在解析 MVU 变量';
     return '';

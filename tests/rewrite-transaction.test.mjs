@@ -231,19 +231,54 @@ test('rewrite controls mount only in native message buttons, never in message te
     assert.equal(bar.parentElement, buttons);
 });
 
+test('auto rewrite checkbox persists the setting through the UI callback', () => {
+    let enabled = false;
+    let listener;
+    const settings = { connectionId: '', model: '', auto: false };
+    const auto = { dataset: {}, checked: true, addEventListener(type, callback) { if (type === 'change') listener = callback; } };
+    const context = load(uiSource, {
+        document: { getElementById: id => id === 'cxh_rewrite_auto' ? auto : null,
+            querySelector: () => null, createElement: () => ({}) },
+        MutationObserver: class { observe() {} disconnect() {} },
+        requestAnimationFrame: callback => callback(), setInterval, clearInterval,
+    });
+    const ui = context.createRewriteUI({
+        getSettings: () => settings,
+        getView: () => ({ reply: null, idle: true, busy: false, composerBusy: false }),
+        getConnections: () => [], getActiveConnection: () => null,
+        defaultFeedback: '', onAuto: value => { enabled = value; settings.auto = value; }, onSettings() {},
+        onRewrite() {}, onJump() {}, onVersions() {}, onMutation() {},
+    });
+    ui.install();
+    assert.equal(typeof listener, 'function');
+    auto.checked = true;
+    listener();
+    assert.equal(enabled, true);
+});
+
 test('rewrite blocker uses the native edit controls, not an unused swipe enum', () => {
-    const fragment = controllerSource.match(/function rewriteBlocker\(ctx = getContext\(\)\) \{[\s\S]*?\n\}/)?.[0];
-    assert.ok(fragment);
+    const start = controllerSource.indexOf('function rewriteBlocker(');
+    const end = controllerSource.indexOf('\nfunction isIdle(', start);
+    const fragment = start >= 0 && end > start ? controllerSource.slice(start, end) : '';
     const ctx = { streamingProcessor: null };
-    let editing = true;
+    // Native messageEdit sets an inline `display: inline-flex`; the idle state keeps
+    // no inline style at all and relies on the stylesheet's `display: none`.
+    let editButtons = [{ style: { display: 'inline-flex' } }];
+    let editTextarea = false;
     const context = load(fragment, {
         core: { isChatSaving: false, is_send_press: false, swipeState: 'none' },
         SWIPE_STATE: { SWIPING: 'swiping', EDITING: 'editing' },
         getContext: () => ctx,
-        document: { querySelector: selector => editing && selector.includes('.mes_edit_buttons') ? {} : null },
+        document: { querySelector: selector => selector.includes(':is(') && editTextarea ? {} : null,
+            querySelectorAll: () => editButtons },
         settings: () => ({ mvu: false }), mvuBusy: () => false,
     });
     assert.equal(context.rewriteBlocker(), '正在编辑消息');
-    editing = false;
+    editButtons = [{ style: { display: 'none' } }, { style: {} }];
     assert.equal(context.rewriteBlocker(), '');
+    editButtons = [{ style: {} }, { style: { display: '' } }];
+    assert.equal(context.rewriteBlocker(), '');
+    editButtons = [{ style: { display: 'none' } }];
+    editTextarea = true;
+    assert.equal(context.rewriteBlocker(), '正在编辑消息');
 });

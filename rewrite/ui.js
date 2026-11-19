@@ -1,5 +1,5 @@
 export function createRewriteUI({ getSettings, getView, getConnections, getActiveConnection,
-    defaultFeedback, onSettings, onRewrite, onJump, onVersions, onMutation }) {
+    defaultFeedback, onSettings, onAuto, onRewrite, onJump, onVersions, onMutation }) {
     let bar, observer, frame, clock, shown;
     let disposed = false;
     const refresh = () => {
@@ -80,6 +80,16 @@ export function createRewriteUI({ getSettings, getView, getConnections, getActiv
         if (!view.busy && clock) { clearInterval(clock); clock = null; }
     }
     function install() {
+        const auto = document.getElementById('cxh_rewrite_auto');
+        if (auto && !auto.dataset?.cxhBound) {
+            auto.dataset ??= {};
+            auto.dataset.cxhBound = '1';
+            auto.addEventListener('change', () => {
+                if (typeof onAuto === 'function') onAuto(auto.checked);
+                else onSettings?.({ auto: auto.checked });
+                refresh();
+            });
+        }
         const chat = document.getElementById('chat');
         if (!observer && chat) {
             observer = new MutationObserver(() => { onMutation(); refresh(); });
