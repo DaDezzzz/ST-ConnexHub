@@ -163,3 +163,31 @@ test('beginRewriteRoute in index.js exposes conn and model to its callers', () =
     assert.match(body, /conn:\s*route\.conn/);
     assert.match(body, /model:\s*route\.model/);
 });
+
+// Native swipeGenerate() sets swipeState = SWIPING and then returns early without
+// resetting it when the target message DOM is invalid. Trusting the enum alone left
+// the chat permanently "swiping", which disabled the rewrite button and stalled the
+// automatic queue forever.
+test('a leaked swipeState does not block rewriting when no swipe is visible', async () => {
+    const sentinel = new Error('SENTINEL_REQUEST_REACHED');
+    const f = createHarness({ failWith: sentinel });
+    f.context.core.swipeState = 'swiping';
+    // No #send_but and no swipe arrows in the stub DOM -> nothing is actually swiping.
+
+    await f.context.rewrite(attemptFor(f.source), false);
+
+    const failed = f.records.at(-1);
+    assert.equal(failed.outcome, 'failed');
+    assert.match(failed.error, /SENTINEL_REQUEST_REACHED/,
+        'the request phase must be reached despite the leaked swipe state');
+});
+
+test('an observable swipe still blocks rewriting', async () => {
+    const f = createHarness({ failWith: new Error('SHOULD_NOT_RUN') });
+    f.context.core.swipeState = 'swiping';
+    f.context.document.getElementById = id => (id === 'send_but' ? { disabled: true, classList: { contains: () => false } } : null);
+
+    await f.context.rewrite(attemptFor(f.source), false);
+
+    assert.equal(f.records.length, 0, 'a real swipe must block before any diagnostic is recorded');
+});

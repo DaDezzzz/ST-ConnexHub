@@ -48,14 +48,32 @@ function composerBusy() {
     return Boolean(document.getElementById('send_textarea')?.value.trim()) || hasPendingFileAttachment();
 }
 
+/**
+ * A swipe is only really in progress while the native UI shows it. `body[data-swiping]`
+ * is set and cleared next to `swipeState`, so it can leak for the same reason; the
+ * send button is the independent signal, because generation re-enables it on finish.
+ */
+function swipeLooksActive() {
+    const sendButton = document.getElementById('send_but');
+    if (sendButton && (sendButton.disabled || sendButton.classList?.contains('disabled'))) return true;
+    const swipeArrows = document.querySelectorAll('#chat .mes:last-child .swipe_right, #chat .mes:last-child .swipe_left');
+    return [...swipeArrows].some(element => element.classList?.contains('disabled'));
+}
+
 function rewriteBlocker(ctx = getContext()) {
     if (core.isChatSaving) return '正在保存聊天';
     const stream = ctx.streamingProcessor;
     if (stream?.isFinished || stream?.isFinalizing || stream?.isStopped) return '正在完成回复收尾';
     if (core.is_send_press || stream) return '正在生成回复';
-    if (core.swipeState === SWIPE_STATE.SWIPING) return '正在切换回复版本';
-    // This ST version does not assign SWIPE_STATE.EDITING. Native messageEdit
-    // hides the normal buttons and shows the edit controls instead.
+    // Native swipeGenerate() sets swipeState = SWIPING and then bails out with a
+    // bare `return` when the target message DOM is not valid, never resetting the
+    // state. Trusting that enum alone left the chat permanently "swiping": the
+    // rewrite button stayed disabled and the automatic queue retried forever.
+    // Only block when a swipe is actually observable in the UI.
+    if (core.swipeState === SWIPE_STATE.SWIPING && swipeLooksActive()) return '正在切换回复版本';
+    // Native messageEdit() hides the normal buttons and shows the edit controls,
+    // and this ST version does assign SWIPE_STATE.EDITING. Keep both checks: the
+    // enum catches programmatic edits, the DOM check catches the editor itself.
     if (core.swipeState === SWIPE_STATE.EDITING
         || [...document.querySelectorAll('#chat .mes_edit_buttons')].some(element => {
             // The default state comes from the stylesheet (`display: none`), so the
