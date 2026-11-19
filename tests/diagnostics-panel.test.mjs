@@ -12,8 +12,9 @@ const payload = 'data: {"choices":[{"delta":{"content":"PRIVATE_REPLY"}}]}\n\n'
     + 'data: {"choices":[{"finish_reason":"stop"}]}\n\ndata: [DONE]\n\n';
 function setup({ items = new Map(), fetchImpl, denied = false, exportFails = false, missing = false } = {}) {
     const listeners = new Map();
-    const nodes = Object.fromEntries(['enabled', 'export', 'clear', 'status'].map(name => [name, {
+    const nodes = Object.fromEntries(['enabled', 'export', 'clear', 'status', 'output'].map(name => [name, {
         checked: false, disabled: false, textContent: '', closest: selector => selector === '#cxh_diagnostics_' + name,
+        value: '', scrollTop: 0, scrollHeight: 100,
     }]));
     const host = new EventTarget();
     host.fetch = fetchImpl || (async () => new Response(payload, { headers: { 'content-type': 'text/event-stream' } }));
@@ -43,11 +44,11 @@ function setup({ items = new Map(), fetchImpl, denied = false, exportFails = fal
     };
 }
 
-test('panel stays off until consent, saves send/receive summaries and exports an actual JSON blob', async () => {
+test('brief observation is always on; detailed persistence stays off until consent', async () => {
     const f = setup();
     try {
         assert.equal(f.nodes.enabled.checked, false);
-        assert.equal(f.host.fetch, f.original);
+        assert.notEqual(f.host.fetch, f.original);
         assert.equal(f.nodes.export.disabled, true);
         f.toggle(true);
         assert.equal(f.items.get(ENABLED_KEY), 'true');
@@ -69,9 +70,9 @@ test('panel stays off until consent, saves send/receive summaries and exports an
         const exported = await (await fetch(link.href)).json();
         assert.equal(exported.records[0].id, record.id);
         f.toggle(false);
-        assert.equal(f.host.fetch, f.original);
+        assert.notEqual(f.host.fetch, f.original);
         assert.equal(f.items.get(ENABLED_KEY), 'false');
-        assert.equal(JSON.parse(f.items.get(LOGS_KEY)).records.length, 1);
+        assert.equal(f.items.has(LOGS_KEY), false);
         f.click('clear');
         assert.equal(f.items.has(LOGS_KEY), false);
         assert.equal(f.nodes.export.disabled, true);
@@ -101,8 +102,8 @@ test('saved consent/logs survive another panel load and unfinished snapshots are
 test('storage/exports failing leave chat and in-memory records usable with a visible warning', async () => {
     const f = setup({ denied: true, exportFails: true });
     try {
-        assert.match(f.nodes.status.textContent, /保存不可用/);
         f.toggle(true);
+        assert.match(f.nodes.status.textContent, /保存不可用/);
         assert.equal(await (await f.host.fetch(requestUrl, options)).text(), payload);
         assert.match(f.nodes.status.textContent, /保存不可用/);
         f.click('export');
@@ -112,7 +113,7 @@ test('storage/exports failing leave chat and in-memory records usable with a vis
     } finally { f.panel.dispose(); }
 });
 
-test('pagehide/clear/disable never cancel an in-flight stream or resurrect cleared records', async () => {
+test('pagehide/clear/detailed-toggle never cancel an in-flight stream or resurrect logs', async () => {
     let resolve;
     const f = setup({ fetchImpl: () => new Promise(done => { resolve = done; }) });
     try {
@@ -126,7 +127,7 @@ test('pagehide/clear/disable never cancel an in-flight stream or resurrect clear
         assert.equal(await (await pending).text(), payload);
         f.host.dispatchEvent(new Event('pagehide'));
         assert.equal(f.items.has(LOGS_KEY), false);
-        assert.equal(f.host.fetch, f.original);
+        assert.notEqual(f.host.fetch, f.original);
     } finally { f.panel.dispose(); }
 });
 
@@ -163,7 +164,43 @@ test('real settings markup isolates diagnostics controls from editor clearing', 
         if (!tag.endsWith('/>') && !voidTags.has(name)) stack.push({ name, id });
     }
     assert.equal(stack.length, 0);
-    for (const id of ['cxh_diagnostics', 'cxh_diagnostics_enabled', 'cxh_diagnostics_export', 'cxh_diagnostics_clear', 'cxh_diagnostics_status']) {
+    for (const id of ['cxh_diagnostics', 'cxh_diagnostics_enabled', 'cxh_diagnostics_export', 'cxh_diagnostics_clear', 'cxh_diagnostics_status', 'cxh_diagnostics_output']) {
         assert.equal(ids.filter(value => value === id).length, 1);
     }
+});
+
+test('rewrite display is bounded, includes failures and never writes local storage', () => {
+    const f = setup();
+    try {
+        for (let index = 0; index < 12; index++) f.panel.recordRewrite({ rewriteId: `job-${index}`,
+            outcome: 'pending', automatic: false, connectionName: '第二连接', model: 'model-x' });
+        const error = new Error('request failed');
+        error.stack = 'Error: request failed\n    at rewrite (controller.js:296:99)';
+        f.panel.recordRewrite({ rewriteId: 'job-11', outcome: 'failed', error });
+        assert.match(f.nodes.output.value, /手动重写.*第二连接.*model-x.*失败/);
+        assert.match(f.nodes.output.value, /controller\.js:296:99/);
+        assert.doesNotMatch(f.nodes.output.value, /job-0\]/);
+        assert.equal(f.items.has('connexHub.rewrite.diagnostics.v1'), false);
+        f.click('clear');
+        assert.match(f.nodes.output.value, /暂无日志/);
+    } finally { f.panel.dispose(); }
+});
+
+test('brief request log works by default, keeps ten rows and never persists it', async () => {
+    const f = setup();
+    try {
+        assert.equal(f.nodes.enabled.checked, false);
+        for (let index = 0; index < 12; index++) {
+            const body = { ...JSON.parse(options.body), model: `model-${index}` };
+            await (await f.host.fetch(requestUrl, { ...options, body: JSON.stringify(body) })).text();
+        }
+        assert.match(f.nodes.output.value, /普通请求/);
+        assert.match(f.nodes.output.value, /model-11/);
+        assert.doesNotMatch(f.nodes.output.value, /model-0 ·/);
+        assert.equal((f.nodes.output.value.match(/\[普通请求\]/g) || []).length, 10);
+        assert.equal(f.items.has(LOGS_KEY), false);
+        assert.equal(f.items.has(ENABLED_KEY), false);
+        f.click('clear');
+        assert.match(f.nodes.output.value, /暂无日志/);
+    } finally { f.panel.dispose(); }
 });

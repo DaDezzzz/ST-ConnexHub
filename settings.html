@@ -155,12 +155,13 @@
         </details>
 
         <details id="cxh_diagnostics" class="cxh-card cxh-diagnostics">
-            <summary>连接诊断（输出中断排查）</summary>
+            <summary>连接诊断 / 重写日志</summary>
             <label class="cxh-diagnostics-switch">
                 <input id="cxh_diagnostics_enabled" type="checkbox" />
-                记录请求 / 响应摘要并保存到本机
+                启用详细中断排查（仅最近一条保存到本机）
             </label>
-            <small class="cxh-hint">默认关闭，开启后记住此浏览器的开关。记录模型、参数、耗时、结束原因及脱敏错误；不记录聊天正文、回复正文、思考或认证请求头。仅保留最近一次请求，每天按本机时间 06:00 清空；若页面或服务当时未运行，会在下次启动或恢复页面时补清。可导出 JSON。同站点脚本可访问，导出分享前请检查。</small>
+            <small class="cxh-hint">下方始终展示普通请求与重写的最近 10 条简要日志（渠道、模型、HTTP 状态及脱敏错误），刷新后清空、不写入本机。详细中断排查默认关闭，开启后记录参数、耗时和结束原因；仅最近一次保存到本机，每天 06:00 清理，可导出 JSON。不记录正文、思考或认证请求头。</small>
+            <textarea id="cxh_diagnostics_output" class="text_pole cxh-diagnostics-output" rows="12" readonly aria-label="连接与重写简要日志" placeholder="暂无日志"></textarea>
             <div class="cxh-diagnostics-actions">
                 <button id="cxh_diagnostics_export" type="button" class="menu_button" disabled>导出日志</button>
                 <button id="cxh_diagnostics_clear" type="button" class="menu_button" disabled>清空日志</button>

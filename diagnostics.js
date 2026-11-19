@@ -307,10 +307,11 @@ function responseInspector(record, stream, expectedStream, clean, finish, warnin
 
 /** Opt-in observer; persistence is delegated to the panel, never a network endpoint. */
 export function createDiagnostics({ host = globalThis, baseUrl = globalThis.location?.href,
-    shouldRecord = () => false, getSecrets = () => [], onChange = () => {}, capacity = 4,
-    getRequestMetadata = () => ({}), initialRecords = [], clock = () => performance.now() } = {}) {
+    shouldRecord = () => false, getSecrets = () => [], onChange = () => {}, capacity = 10,
+    getRequestMetadata = () => ({}), initialRecords = [], clock = () => performance.now(),
+    shouldPersist = () => true } = {}) {
     // Keep a few concurrent observations in memory, while persistence/export retain only the latest one.
-    const limit = Math.max(2, Math.min(8, Math.trunc(capacity) || 4));
+    const limit = Math.max(2, Math.min(10, Math.trunc(capacity) || 10));
     const records = clonePlain(initialRecords.slice(-limit));
     const active = new Map();
     let enabled = false;
@@ -570,8 +571,10 @@ export function createDiagnostics({ host = globalThis, baseUrl = globalThis.loca
         enable, disable, clear, getRecords,
         get enabled() { return enabled; },
         get count() { return records.length; },
+        get persistentCount() { return records.filter(record => shouldPersist(record)).length; },
+        getPersistentRecords() { return getRecords().filter(record => shouldPersist(record)); },
         exportJson() {
-            const latest = getRecords().slice(-1);
+            const latest = this.getPersistentRecords().slice(-1);
             return JSON.stringify({ schemaVersion: 1, exportedAt: new Date().toISOString(),
                 scope: 'ConnexHub browser-to-SillyTavern diagnostics; provider-side transformations are not observable',
                 retention: 'Latest request summary; local storage resets daily at 06:00 local time; no raw bodies or authentication headers',

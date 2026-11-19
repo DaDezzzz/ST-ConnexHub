@@ -57,11 +57,11 @@ export function createRewriteUI({ getSettings, getView, getConnections, getActiv
         const view = shown = getView();
         sync();
         const host = view.reply && document.querySelector(`#chat > .mes[mesid="${view.reply.index}"]`);
-        const buttons = host?.querySelector(':scope > .mes_block .mes_buttons');
-        if (bar?.parentElement && bar.parentElement !== buttons) bar.remove();
-        if (!host || !buttons) { clearInterval(clock); clock = null; return; }
+        const block = host?.querySelector(':scope > .mes_block');
+        if (bar?.parentElement && bar.parentElement !== block) bar.remove();
+        if (!host || !block) { clearInterval(clock); clock = null; return; }
         if (!bar) bar = makeBar();
-        if (bar.parentElement !== buttons) buttons.append(bar);
+        if (bar.parentElement !== block) block.append(bar);
         const rewrite = bar.querySelector('[data-rewrite]');
         rewrite.hidden = view.busy;
         rewrite.disabled = !view.idle || view.composerBusy;

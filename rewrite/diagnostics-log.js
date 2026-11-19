@@ -1,44 +1,61 @@
-﻿const KEY = 'connexHub.rewrite.diagnostics.v1';
+// Display-only, bounded diagnostics. No storage, timers or request interception.
+const LIMIT = 10;
 
-// Lifecycle errors may contain echoed content. Keep bounded, conventional error text only.
 export function safeRewriteError(value) {
-    const text = String(value || '鏈煡閿欒').replace(/[\r\n]+/g, ' ')
+    const text = String(value || '未知错误')
         .replace(/\bBearer\s+\S+/gi, 'Bearer [redacted]')
         .replace(/\b(?:sk-[\w-]+|eyJ[\w-]+\.[\w-]+\.[\w-]+)\b/g, '[redacted]')
         .replace(/https?:\/\/[^\s<>"']+/gi, url => {
             try { const parsed = new URL(url); return parsed.origin + parsed.pathname; }
             catch { return '[url]'; }
         });
-    return text.slice(0, 500);
+    return text.slice(0, 4000);
 }
 
-export function createRewriteDiagnostics(storage) {
-    let record = null;
-    try {
-        const stored = storage || globalThis.localStorage;
-        record = JSON.parse(stored?.getItem(KEY) || 'null');
-    } catch { /* Invalid or unavailable data is ignored. */ }
-    function save() {
-        try {
-            const stored = storage || globalThis.localStorage;
-            if (record) stored?.setItem(KEY, JSON.stringify(record)); else stored?.removeItem(KEY);
+function compactError(error) {
+    if (!error) return { message: '', stack: '' };
+    const message = safeRewriteError(error.message || error).slice(0, 500);
+    const stack = safeRewriteError(error.stack || '').slice(0, 3000);
+    return { message, stack: (stack.startsWith(message) ? stack : `${message}\n${stack}`.trim()).slice(0, 3000) };
+}
+
+export function createRewriteDiagnostics() {
+    const records = [];
+    const byId = new Map();
+    function trim() {
+        while (records.length > LIMIT) {
+            const removed = records.shift();
+            if (byId.get(removed.rewriteId) === removed) byId.delete(removed.rewriteId);
         }
-        catch { /* Storage failure must not affect rewriting. */ }
     }
     return {
         record(event) {
             if (!event || typeof event.rewriteId !== 'string') return;
-            record = {
-                rewriteId: event.rewriteId.slice(0, 100),
-                outcome: ['completed', 'stopped', 'cancelled', 'failed'].includes(event.outcome) ? event.outcome : 'unknown',
-                connectionName: String(event.connectionName || '').slice(0, 160),
-                model: String(event.model || '').slice(0, 180),
+            const id = event.rewriteId.slice(0, 100);
+            const previous = byId.get(id);
+            const error = compactError(event.error);
+            const record = {
+                rewriteId: id,
+                outcome: ['pending', 'completed', 'stopped', 'cancelled', 'failed'].includes(event.outcome)
+                    ? event.outcome : previous?.outcome || 'unknown',
+                connectionName: String(event.connectionName || previous?.connectionName || '').slice(0, 160),
+                model: String(event.model || previous?.model || '').slice(0, 180),
                 updatedAt: new Date().toISOString(),
+                automatic: typeof event.automatic === 'boolean' ? event.automatic : previous?.automatic,
+                status: event.status ?? previous?.status ?? null,
+                error: error.message || previous?.error || '',
+                stack: error.stack || previous?.stack || '',
             };
-            if (event.error) record.error = safeRewriteError(event.error);
-            save();
+            if (previous) {
+                const index = records.indexOf(previous);
+                if (index >= 0) records[index] = record;
+                else records.push(record);
+            } else records.push(record);
+            byId.set(id, record);
+            trim();
         },
-        latest: () => record,
-        clear() { record = null; save(); },
+        latest: () => records.at(-1) ?? null,
+        getRecords: () => records.map(record => ({ ...record })),
+        clear() { records.length = 0; byId.clear(); },
     };
 }

@@ -278,6 +278,7 @@ async function rewrite(attempt, automatic = true, notice = null) {
         cancelled: false, generating: false, automatic, notice: notice ?? beginNotice(), route,
         timing: { startedAt: automatic && Number.isFinite(firstStarted) ? Math.min(firstStarted, now) : now, rewriteStartedAt: now },
     };
+    route.automatic = automatic;
     running = job;
     job.phase = 'prepare';
     setStatus('正在准备重写');
@@ -313,7 +314,7 @@ async function rewrite(attempt, automatic = true, notice = null) {
         setStatus(`${automatic ? '正在自动重写' : '正在重写'} · ${job.route.label}`);
         // Diagnostics must never abort a rewrite: beginRoute() only guarantees { id, label, release }.
         deps.recordDiagnostic({
-            rewriteId: job.id, outcome: 'pending',
+            rewriteId: job.id, outcome: 'pending', automatic,
             connectionName: route.conn?.name || '(未命名)', model: route.model ?? job.route?.model,
         });
         let last;
@@ -338,7 +339,7 @@ async function rewrite(attempt, automatic = true, notice = null) {
         else await collapse(job, last);
         job.completed = true;
         deps.recordDiagnostic({
-            rewriteId: job.id, outcome: job.stopRequested ? 'stopped' : 'completed',
+            rewriteId: job.id, outcome: job.stopRequested ? 'stopped' : 'completed', automatic,
             connectionName: route.conn?.name || '(未命名)', model: route.model ?? job.route?.model,
         });
         setStatus(job.stopRequested ? '已停止，当前重写稿已保留，原稿仍在上一版' : '重写已完成，原稿已保存为上一版');
@@ -362,8 +363,8 @@ async function rewrite(attempt, automatic = true, notice = null) {
             globalThis.toastr?.warning(status);
         }
         deps.recordDiagnostic({
-            rewriteId: job.id, outcome: job.cancelled ? 'cancelled' : 'failed',
-            error: `[${job.phase || 'unknown'}] ${error?.message || String(error)}`,
+            rewriteId: job.id, outcome: job.cancelled ? 'cancelled' : 'failed', automatic,
+            error,
             connectionName: route.conn?.name || '(未命名)', model: route.model,
         });
     } finally {

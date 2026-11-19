@@ -33,5 +33,7 @@ export function applyRewriteMetadata(body, conn, model, sources) {
 // which request window is active instead of inspecting the serialized body.
 export function rewriteDiagnosticMetadata(context) {
     if (!context) return { phase: 'initial' };
-    return { phase: 'rewrite', rewriteId: context.rewriteId, connectionName: context.connectionName };
+    const metadata = { phase: 'rewrite', rewriteId: context.rewriteId, connectionName: context.connectionName };
+    if (typeof context.automatic === 'boolean') metadata.automatic = context.automatic;
+    return metadata;
 }

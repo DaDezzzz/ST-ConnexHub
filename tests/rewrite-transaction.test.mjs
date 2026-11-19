@@ -201,10 +201,10 @@ test('fallback staging hides the temporary feedback and never copies it into the
     assert.equal(f.nodes.get(1).classList.contains('auto-rewrite-staging'), false);
 });
 
-test('rewrite controls mount only in native message buttons, never in message text', () => {
+test('rewrite controls mount at the bottom of the message block, never in message text or native buttons', () => {
     let appendedTo = null;
-    const buttons = { append: node => { appendedTo = node; node.parentElement = buttons; } };
-    const host = { querySelector: selector => selector === ':scope > .mes_block .mes_buttons' ? buttons : null };
+    const block = { append: node => { appendedTo = node; node.parentElement = block; } };
+    const host = { querySelector: selector => selector === ':scope > .mes_block' ? block : null };
     const control = () => ({ addEventListener() {}, setAttribute() {}, querySelector: () => ({}) });
     const bar = { parentElement: null, querySelector: () => control() };
     const context = load(uiSource, {
@@ -228,7 +228,7 @@ test('rewrite controls mount only in native message buttons, never in message te
     });
     ui.refresh();
     assert.equal(appendedTo, bar);
-    assert.equal(bar.parentElement, buttons);
+    assert.equal(bar.parentElement, block);
 });
 
 test('auto rewrite checkbox persists the setting through the UI callback', () => {

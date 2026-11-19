@@ -444,6 +444,20 @@
     width: auto;
 }
 
+.cxh-diagnostics-output {
+    display: block;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 14em;
+    max-height: 32em;
+    margin: 8px 0;
+    resize: vertical;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    font: 12px/1.55 var(--monoFontFamily, monospace);
+    user-select: text;
+}
+
 /* ── 手机端适配 ─────────────────────────────── */
 
 @media screen and (max-width: 1000px) {

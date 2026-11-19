@@ -136,8 +136,9 @@ test('missing conn on the route object must not abort the rewrite before the req
     const failed = f.records.at(-1);
     assert.equal(failed.outcome, 'failed');
     // The failure must come from the generation step, proving the request phase was reached.
-    assert.match(failed.error, /SENTINEL_REQUEST_REACHED/);
-    assert.doesNotMatch(failed.error, /Cannot read properties of undefined/);
+    assert.match(failed.error.message, /SENTINEL_REQUEST_REACHED/);
+    assert.doesNotMatch(failed.error.message, /Cannot read properties of undefined/);
+    assert.equal(failed.automatic, false);
 });
 
 test('a route that exposes conn/model records the real connection name', async () => {
@@ -178,8 +179,19 @@ test('a leaked swipeState does not block rewriting when no swipe is visible', as
 
     const failed = f.records.at(-1);
     assert.equal(failed.outcome, 'failed');
-    assert.match(failed.error, /SENTINEL_REQUEST_REACHED/,
+    assert.match(failed.error.message, /SENTINEL_REQUEST_REACHED/,
         'the request phase must be reached despite the leaked swipe state');
+});
+
+test('manual rewrite results never enter the automatic rewrite queue', async () => {
+    const f = createHarness({ failWith: new Error('SENTINEL_REQUEST_REACHED') });
+    f.settings.auto = true;
+    let scheduled = 0;
+    f.context.createBackgroundScheduler = () => ({ request() { scheduled++; }, cancel() {}, retry() {} });
+    await f.context.rewrite(attemptFor(f.source), false);
+    await f.handlers.get('message_received')(0, 'normal');
+    assert.equal(scheduled, 0);
+    assert.equal(f.context.pending, undefined);
 });
 
 test('an observable swipe still blocks rewriting', async () => {

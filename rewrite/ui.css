@@ -2,7 +2,7 @@
 .auto-rewrite-preview-waiting { min-height: 100px; padding: 22px 0 12px; }
 .auto-rewrite-preview-label { display: inline-block; padding: 4px 9px; border: 1px solid var(--SmartThemeBorderColor); border-radius: 7px; opacity: .8; font-size: .75em; }
 .auto-rewrite-preview-waiting p { margin: 15px 0 0; opacity: .55; font-size: .88em; line-height: 1.6; }
-.cxh-rewrite-bar { display: inline-flex; align-items: center; gap: 4px; margin: 0; }
+.cxh-rewrite-bar { display: flex; box-sizing: border-box; width: 100%; align-items: center; justify-content: flex-end; gap: 6px; margin: 10px 0 2px; padding-top: 8px; border-top: 1px solid var(--SmartThemeBorderColor); }
 .cxh-rewrite-bar .menu_button_icon { display: inline-flex; align-items: center; justify-content: center; flex: 0 0 32px; width: 32px; min-width: 32px; height: 32px; padding: 0; margin: 0; }
 .cxh-rewrite-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
 .cxh-rewrite-bar [hidden] { display: none !important; }
@@ -11,6 +11,7 @@
 #cxh_rewrite_status { display: block; margin-top: 6px; }
 #cxh_rewrite_model_status:empty { display: none; }
 @media (pointer: coarse), (max-width: 600px) {
+    .cxh-rewrite-bar { justify-content: center; gap: 10px; margin-top: 12px; }
     .cxh-rewrite-bar .menu_button_icon { flex-basis: 40px; width: 40px; min-width: 40px; height: 40px; }
     #cxh_rewrite .cxh-model-row { flex-wrap: nowrap; gap: 6px; }
     #cxh_rewrite .cxh-model-wrap { min-width: 0; }

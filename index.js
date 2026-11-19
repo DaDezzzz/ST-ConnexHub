@@ -332,7 +332,7 @@ function beginRewriteRoute(route) {
 
 function rewriteRouteContext() {
     const route = armedRewriteId ? rewriteRequests.get(armedRewriteId) : null;
-    return route ? { rewriteId: route.id, connectionName: route.conn.name || '(未命名)' } : null;
+    return route ? { rewriteId: route.id, connectionName: route.conn.name || '(未命名)', automatic: route.automatic } : null;
 }
 
 /** 极简 YAML 对象解析（仅 "k: v" / "k:\n  v" 不支持；够用即可） */
@@ -1361,7 +1361,10 @@ jQuery(async () => {
                 return body.chat_completion_source === source && endpoint === format.normalizeEndpoint(conn.endpoint).url;
             },
             getSecrets: () => [draftConn().apiKey, ...getConnections().map(conn => conn.apiKey)],
-            getRequestMetadata: () => rewriteDiagnosticMetadata(rewriteRouteContext()),
+            getRequestMetadata() {
+                const route = armedRewriteId ? rewriteRequests.get(armedRewriteId) : null;
+                return rewriteDiagnosticMetadata(rewriteRouteContext());
+            },
         });
     } catch {
         $('#cxh_diagnostics_status').text('诊断模块加载失败，聊天功能不受影响。请完整更新扩展后刷新。');
