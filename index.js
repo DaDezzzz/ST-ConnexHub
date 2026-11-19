@@ -311,6 +311,10 @@ function beginRewriteRoute(route) {
     return {
         id,
         label: `${route.conn.name || '(未命名)'} / ${route.model}`,
+        // Expose the frozen route so callers (diagnostics, UI) do not have to reach
+        // back into the live settings object.
+        conn: route.conn,
+        model: route.model,
         release() {
             if (released) return;
             released = true;

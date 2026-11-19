@@ -293,7 +293,11 @@ async function rewrite(attempt, automatic = true, notice = null) {
         job.phase = 'request';
         job.generating = true;
         setStatus(`${automatic ? '正在自动重写' : '正在重写'} · ${job.route.label}`);
-        deps.recordDiagnostic({ rewriteId: job.id, outcome: 'pending', connectionName: route.conn.name, model: route.model });
+        // Diagnostics must never abort a rewrite: beginRoute() only guarantees { id, label, release }.
+        deps.recordDiagnostic({
+            rewriteId: job.id, outcome: 'pending',
+            connectionName: route.conn?.name || '(未命名)', model: route.model ?? job.route?.model,
+        });
         let last;
         try {
             if (job.inplace) last = await generateInplace(job);
@@ -317,7 +321,7 @@ async function rewrite(attempt, automatic = true, notice = null) {
         job.completed = true;
         deps.recordDiagnostic({
             rewriteId: job.id, outcome: job.stopRequested ? 'stopped' : 'completed',
-            connectionName: route.conn.name, model: route.model,
+            connectionName: route.conn?.name || '(未命名)', model: route.model ?? job.route?.model,
         });
         setStatus(job.stopRequested ? '已停止，当前重写稿已保留，原稿仍在上一版' : '重写已完成，原稿已保存为上一版');
         if (job.mvuPending) globalThis.toastr?.info('重写稿已保留；变量尚未解析完成，暂沿用本轮初始状态，请在正文完整后重新解析变量。');
