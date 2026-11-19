@@ -28,6 +28,20 @@ git clone https://github.com/<your-name>/ST-ConnexHub
 4. 点击「激活」→ 酒馆原生 source 自动切到对应格式
 5. 后续所有该格式请求走该连接；参数与请求头随连接自动应用
 
+## 自动重写
+
+在插头面板展开「自动重写」：
+
+- 开启后，单角色聊天的新回复会自动再生成一版；关闭时仍可在回复底部手动点「重写正文」。
+- 首轮使用当前连接。重写连接默认「与首轮相同」，也可选择另一个已保存连接，并单独指定模型；不会切换全局连接。
+- 支持 OpenAI 兼容与 Claude 跨格式重写。正式生成只读取已保存连接，编辑器草稿仅用于拉取模型和测试连接。
+- 基础审校规则与额外修改意见均可编辑。默认检查角色信息边界、OOC、剧情连续性、台词和无效修饰，只输出正文。
+- 「兼容 MVU 变量」默认关闭，仅在使用 MVU 的角色卡中开启；关闭时不执行变量快照、回滚和额外等待。
+- 原稿保留为旧 Swipe。失败、取消、停止及 MVU 恢复沿用原生重写事务。
+- 每次重写会多发一次请求，消耗额外额度。当前不支持群聊。
+
+开启「连接诊断」后，会额外记录首轮/重写阶段、连接名、模型、传输结果及重写完成/停止/取消/失败原因。仍不保存正文、修改意见、原始响应或密钥；生命周期日志为独立最近一条记录。
+
 ## 输出中断诊断（v1.2.1）
 
 1. 在扩展管理器更新 ConnexHub，刷新酒馆页面。
@@ -76,6 +90,7 @@ node --test tests/*.test.mjs
 扩展管理 → ConnexHub → 勾选「Also clean up extension data」→ 删除。  
 `cleanupPluginData` hook 会清空：
 - `extension_settings.connexHub` 全部数据
+- 本机最近一条重写生命周期日志
 - 酒馆密钥库 `SECRET_KEYS.CLAUDE` 槽中所有 `ConnexHub/...` 标记的条目
 
 ## 数据隔离保证
@@ -96,3 +111,7 @@ node --test tests/*.test.mjs
 - [x] 首次安装初始化两种格式示例
 - [x] 卸载清理 hook
 - [ ] 导入 / 导出
+
+## 来源与许可
+
+自动重写核心基于 [SillyTavern-Auto-Rewrite](https://github.com/wujimol/SillyTavern-Auto-Rewrite)，原项目采用 AGPL-3.0。本项目保留该许可，见 `LICENSE`；重写模块包含针对 ConnexHub 请求路由、精简界面、默认意见和可选 MVU 的修改。

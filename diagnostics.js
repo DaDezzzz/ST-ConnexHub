@@ -308,7 +308,7 @@ function responseInspector(record, stream, expectedStream, clean, finish, warnin
 /** Opt-in observer; persistence is delegated to the panel, never a network endpoint. */
 export function createDiagnostics({ host = globalThis, baseUrl = globalThis.location?.href,
     shouldRecord = () => false, getSecrets = () => [], onChange = () => {}, capacity = 4,
-    initialRecords = [], clock = () => performance.now() } = {}) {
+    getRequestMetadata = () => ({}), initialRecords = [], clock = () => performance.now() } = {}) {
     // Keep a few concurrent observations in memory, while persistence/export retain only the latest one.
     const limit = Math.max(2, Math.min(8, Math.trunc(capacity) || 4));
     const records = clonePlain(initialRecords.slice(-limit));
@@ -340,6 +340,8 @@ export function createDiagnostics({ host = globalThis, baseUrl = globalThis.loca
             request: requestSummary(body, clean), response: { bytes: 0, chunks: 0, events: 0 },
             finishReasons: [], usage: {}, warnings: [],
         };
+        const metadata = getRequestMetadata(body);
+        if (metadata && typeof metadata === 'object') Object.assign(record, metadata);
         function changed() {
             record.updatedAt = new Date().toISOString();
             notify();

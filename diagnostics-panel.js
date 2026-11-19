@@ -1,5 +1,6 @@
 import { createDiagnostics } from './diagnostics.js';
 import { createDiagnosticsStore, millisecondsUntilNextReset } from './diagnostics-store.js';
+import { createRewriteDiagnostics } from './rewrite/diagnostics-log.js';
 
 const OUTCOMES = {
     pending: '请求进行中',
@@ -25,7 +26,7 @@ const OUTCOMES = {
 };
 
 /** 默认关闭；只在当前浏览器、当前站点保存有界诊断摘要，不同步酒馆账户配置。 */
-export function mountDiagnosticsPanel(root, { shouldRecord, getSecrets, host = globalThis,
+export function mountDiagnosticsPanel(root, { shouldRecord, getSecrets, getRequestMetadata, host = globalThis,
     baseUrl = globalThis.location?.href, getStorage = () => host.localStorage } = {}) {
     if (!root) return null;
     const checkbox = root.querySelector('#cxh_diagnostics_enabled');
@@ -36,8 +37,11 @@ export function mountDiagnosticsPanel(root, { shouldRecord, getSecrets, host = g
     const downloads = new Map();
     let resetTimer = null;
     const store = createDiagnosticsStore({ getStorage });
+    let rewriteLog;
+    try { rewriteLog = createRewriteDiagnostics(getStorage()); }
+    catch { rewriteLog = { record() {}, latest: () => null, clear() {} }; }
     const restored = store.load();
-    const logger = createDiagnostics({ host, baseUrl, shouldRecord, getSecrets,
+    const logger = createDiagnostics({ host, baseUrl, shouldRecord, getSecrets, getRequestMetadata,
         initialRecords: restored.records, onChange: persistAndRender });
 
     function persistAndRender() {
@@ -47,13 +51,15 @@ export function mountDiagnosticsPanel(root, { shouldRecord, getSecrets, host = g
 
     function render() {
         checkbox.checked = logger.enabled;
-        exportButton.disabled = clearButton.disabled = logger.count === 0;
+        exportButton.disabled = clearButton.disabled = logger.count === 0 && !rewriteLog.latest();
         const records = logger.getRecords();
         const latest = records[records.length - 1];
-        const result = latest ? ` · 最近：${OUTCOMES[latest.outcome] || latest.outcome}` : '';
+        const lifecycle = rewriteLog.latest();
+        const result = latest ? ` · 最近：${OUTCOMES[latest.outcome] || latest.outcome}${latest.phase === 'rewrite' ? '（重写）' : ''}` : '';
+        const rewriteResult = lifecycle ? ` · 重写：${lifecycle.outcome}${lifecycle.error ? `（${lifecycle.error}）` : ''}` : '';
         const storage = store.state === 'unavailable'
             ? '本机保存不可用，请关闭页面前导出' : '仅保留最近一次 · 每日 06:00 清理';
-        status.textContent = `${logger.enabled ? '记录中' : '已关闭'} · ${storage}${result}`;
+        status.textContent = `${logger.enabled ? '记录中' : '已关闭'} · ${storage}${result}${rewriteResult}`;
     }
 
     function clearExpired() {
@@ -97,11 +103,14 @@ export function mountDiagnosticsPanel(root, { shouldRecord, getSecrets, host = g
         if (event.target.closest('#cxh_diagnostics_clear')) {
             store.clear();
             logger.clear();
-        } else if (event.target.closest('#cxh_diagnostics_export') && logger.count) {
+            rewriteLog.clear();
+        } else if (event.target.closest('#cxh_diagnostics_export') && (logger.count || rewriteLog.latest())) {
             let url;
             const link = root.ownerDocument.createElement('a');
             try {
-                url = URL.createObjectURL(new Blob([logger.exportJson()], { type: 'application/json;charset=utf-8' }));
+                const exported = JSON.parse(logger.exportJson());
+                exported.rewriteLifecycle = rewriteLog.latest();
+                url = URL.createObjectURL(new Blob([JSON.stringify(exported, null, 2)], { type: 'application/json;charset=utf-8' }));
                 link.href = url;
                 link.download = `connexhub-diagnostics-${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
                 // Safari 需要已挂载的下载链接；仅导出时延迟回收，不在收流期间运行定时任务。
@@ -131,6 +140,7 @@ export function mountDiagnosticsPanel(root, { shouldRecord, getSecrets, host = g
     render();
     return {
         clear() { store.clear(); logger.clear(); },
+        recordRewrite(event) { if (logger.enabled) rewriteLog.record(event); render(); },
         dispose() {
             root.removeEventListener('change', change);
             root.removeEventListener('click', click);
@@ -142,6 +152,7 @@ export function mountDiagnosticsPanel(root, { shouldRecord, getSecrets, host = g
             store.setEnabled(false);
             store.clear();
             logger.clear();
+            rewriteLog.clear();
             for (const url of [...downloads.keys()]) releaseDownload(url);
         },
     };

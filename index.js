@@ -30,11 +30,19 @@ import { extension_settings, renderExtensionTemplateAsync } from '../../../exten
 import { chat_completion_sources, oai_settings } from '../../../openai.js';
 import { saveSettingsDebounced, getRequestHeaders, eventSource, event_types, main_api } from '../../../../script.js';
 import { SECRET_KEYS, deleteSecret, secret_state } from '../../../secrets.js';
+import { REWRITE_REQUEST, applyRewriteMetadata, rewriteDiagnosticMetadata } from './rewrite/routing.js';
+import { createRewriteController } from './rewrite/controller.js';
 
 const LOG = '[ConnexHub]';
 const NS = 'connexHub';
 const SECRET_LABEL_TAG = 'ConnexHub'; // uninstall 时按此 label 标识清理
 let diagnosticsPanel = null;
+let rewriteController = null;
+const rewriteRequests = new Map();
+// Arm state survives until the rewrite job releases it. CHAT_COMPLETION_SETTINGS_READY
+// handlers cannot rely on listener order, so routing is resolved from this window
+// instead of a marker attached at generation time.
+let armedRewriteId = null;
 const MODEL_RENDER_LIMIT = 200;
 
 function clonePlain(value) {
@@ -78,6 +86,7 @@ const DEFAULT_SETTINGS = {
     connections: [],
     /** 首次安装已初始化标志 */
     initialized: false,
+    rewrite: { auto: false, connectionId: '', model: '', mvu: false, baseFeedback: '', feedback: '' },
 };
 
 const DEFAULT_CONNECTION = () => ({
@@ -117,6 +126,15 @@ function getStore() {
 function getConnections() { return getStore().connections; }
 function getConn(id) { return getConnections().find(c => c.id === id) || null; }
 function getSelectedConn() { return getConn(getStore().selectedConnectionId); }
+function getRewriteSettings() {
+    const value = getStore().rewrite ??= {};
+    if (typeof value.auto !== 'boolean') value.auto = false;
+    for (const key of ['connectionId', 'model', 'baseFeedback', 'feedback']) {
+        if (typeof value[key] !== 'string') value[key] = '';
+    }
+    if (typeof value.mvu !== 'boolean') value.mvu = false;
+    return value;
+}
 
 // ── 工具：YAML 数组解析（exclude 列表） ──────────────────────────
 
@@ -202,22 +220,28 @@ function applyActiveConnection(generateData) {
         // 原版视图下完全不干预请求 —— 与原生数据/行为彻底隔离
         if (store.viewMode !== 'cxh') return;
         if (!generateData) return;
-        // 用编辑器草稿（draftConn）而非仅已保存数据：与「测试连接」同源，
-        // 未保存的模型/端点/密钥改动在酒馆发送时同样生效（选中即生效）
-        const conn = draftConn();
+        // 正式生成只使用已保存连接；草稿仅供拉取模型和测试连接。
+        const rewrite = generateData[REWRITE_REQUEST];
+        const route = rewrite ? rewriteRequests.get(rewrite.id)
+            : armedRewriteId ? rewriteRequests.get(armedRewriteId) : null;
+        if (rewrite && !route) throw new Error('重写请求路由已失效，请重试');
+        const conn = route?.conn || getSelectedConn();
+        if (!conn) return;
         if (!String(conn.endpoint || '').trim()) return;
 
         const expectedSource = conn.format === 'claude'
             ? chat_completion_sources.CLAUDE
             : chat_completion_sources.CUSTOM;
-        if (generateData.chat_completion_source !== expectedSource) return;
+        if (!route && generateData.chat_completion_source !== expectedSource) return;
+        if (route) applyRewriteMetadata(generateData, conn, route.model, chat_completion_sources);
+        if (route) generateData[REWRITE_REQUEST] = { id: route.id, connectionName: route.conn.name || '(未命名)' };
 
         // 端点 / 密钥 / 模型：注入
         const fmt = FORMATS[conn.format];
         if (!fmt) return;
 
         const normalized = fmt.normalizeEndpoint(conn.endpoint);
-        const model = String(conn.model || '').trim();
+        const model = String(route?.model || conn.model || '').trim();
 
         // 提示词后处理：原样透传原生字段，ST 后端 /generate 入口统一处理（OpenAI/Claude 均生效）
         if (conn.promptPostProcessing) generateData.custom_prompt_post_processing = conn.promptPostProcessing;
@@ -266,7 +290,27 @@ function applyActiveConnection(generateData) {
         }
     } catch (err) {
         console.error(`${LOG} inject failed`, err);
+        throw err;
     }
+}
+
+function beginRewriteRoute(route) {
+    const id = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
+    rewriteRequests.set(id, route);
+    armedRewriteId = id;
+    return {
+        id,
+        label: `${route.conn.name || '(未命名)'} / ${route.model}`,
+        release() {
+            rewriteRequests.delete(id);
+            if (armedRewriteId === id) armedRewriteId = null;
+        },
+    };
+}
+
+function rewriteRouteContext() {
+    const route = armedRewriteId ? rewriteRequests.get(armedRewriteId) : null;
+    return route ? { rewriteId: route.id, connectionName: route.conn.name || '(未命名)' } : null;
 }
 
 /** 极简 YAML 对象解析（仅 "k: v" / "k:\n  v" 不支持；够用即可） */
@@ -347,7 +391,9 @@ async function syncSourceForConn(id, { quiet = true } = {}) {
 // ── 卸载清理（hook clean / delete） ─────────────────────────────
 
 export async function cleanupPluginData() {
-    try {
+try {
+rewriteController?.disable();
+localStorage.removeItem('connexHub.rewrite.diagnostics.v1');
         try { diagnosticsPanel?.dispose(); }
         catch { console.warn(`${LOG} diagnostics cleanup failed; continuing settings cleanup`); }
         diagnosticsPanel = null;
@@ -473,6 +519,7 @@ function renderConnSelect() {
     }
     $sel.empty().append(frag);
     $sel.val(getStore().selectedConnectionId || '');
+    rewriteController?.refresh();
 }
 
 function fillEditor(conn) {
@@ -713,6 +760,7 @@ function saveFromEditor() {
     $('#cxh_conn_select').val(conn.id);
     updateEndpointHint(conn);
     syncSourceForConn(conn.id);
+    rewriteController?.refresh();
     return conn;
 }
 
@@ -782,6 +830,17 @@ async function sendTestMessage(conn) {
 }
 
 function bindEvents() {
+    $(document).on('change.cxh', '#cxh_rewrite_auto, #cxh_rewrite_mvu, #cxh_rewrite_connection', function () {
+        const key = this.id === 'cxh_rewrite_auto' ? 'auto' : this.id === 'cxh_rewrite_mvu' ? 'mvu' : 'connectionId';
+        getRewriteSettings()[key] = this.type === 'checkbox' ? this.checked : this.value;
+        saveSettingsDebounced();
+        rewriteController?.refresh();
+    });
+    $(document).on('change.cxh', '#cxh_rewrite_model, #cxh_rewrite_base, #cxh_rewrite_feedback', function () {
+        const key = this.id === 'cxh_rewrite_model' ? 'model' : this.id === 'cxh_rewrite_base' ? 'baseFeedback' : 'feedback';
+        getRewriteSettings()[key] = this.value;
+        saveSettingsDebounced();
+    });
     // 状态条展开/收起（委托绑定，DOM 重建后依然有效）
     $(document).on('click.cxh', '#cxh_status .cxh-status-toggle', function (e) {
         e.stopPropagation();
@@ -846,6 +905,7 @@ function bindEvents() {
         saveSettingsDebounced();
         renderConnSelect();
         $('#cxh_conn_select').val(dup.id).trigger('change');
+        rewriteController?.refresh();
     });
     $(document).on('click.cxh', '#cxh_btn_del', function () {
         const id = $('#cxh_conn_select').val();
@@ -857,6 +917,7 @@ function bindEvents() {
         saveSettingsDebounced();
         renderConnSelect();
         fillEditor(null);
+        rewriteController?.refresh();
         setStatus('已删除', 'ok');
     });
     // 端点/格式变化 → 实时刷新「实际请求」提示（草稿也生效）
@@ -1106,7 +1167,8 @@ jQuery(async () => {
             shouldRecord(body) {
                 const store = getStore();
                 if (!store.enabled || store.viewMode !== 'cxh' || main_api !== 'openai') return false;
-                const conn = draftConn();
+                const route = armedRewriteId ? rewriteRequests.get(armedRewriteId) : null;
+                const conn = route?.conn || getSelectedConn();
                 if (!String(conn.endpoint || '').trim()) return false;
                 const format = FORMATS[conn.format];
                 if (!format) return false;
@@ -1115,11 +1177,23 @@ jQuery(async () => {
                 return body.chat_completion_source === source && endpoint === format.normalizeEndpoint(conn.endpoint).url;
             },
             getSecrets: () => [draftConn().apiKey, ...getConnections().map(conn => conn.apiKey)],
+            getRequestMetadata: () => rewriteDiagnosticMetadata(rewriteRouteContext()),
         });
     } catch {
         $('#cxh_diagnostics_status').text('诊断模块加载失败，聊天功能不受影响。请完整更新扩展后刷新。');
         $('#cxh_diagnostics_enabled').prop('disabled', true);
     }
+
+    rewriteController = createRewriteController({
+        getSettings: getRewriteSettings,
+        getConnections,
+        getMainConnectionId: () => getStore().selectedConnectionId,
+        beginRoute: beginRewriteRoute,
+        getActiveConnection: () => getConn(getRewriteSettings().connectionId || getStore().selectedConnectionId),
+        recordDiagnostic: (...args) => diagnosticsPanel?.recordRewrite?.(...args),
+        save: saveSettingsDebounced,
+    });
+    rewriteController.enable();
 
     console.log(`${LOG} loaded · ${getConnections().length} connections · view=${getStore().viewMode}`);
 });

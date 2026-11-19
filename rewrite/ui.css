@@ -1,0 +1,6 @@
+.cxh-rewrite-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; margin: 8px 5px; padding: 6px; border-top: 1px solid var(--SmartThemeBorderColor); font-size: 0.9em; }
+.cxh-rewrite-bar [data-caption] { opacity: 0.8; }
+.cxh-rewrite-bar [hidden] { display: none !important; }
+#cxh_rewrite > summary { cursor: pointer; font-weight: 600; }
+#cxh_rewrite_base { min-height: 12em; resize: vertical; }
+#cxh_rewrite_status { display: block; margin-top: 6px; }

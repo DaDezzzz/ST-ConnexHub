@@ -24,6 +24,9 @@ function setup({ failImport = false, failDispose = false } = {}) {
         saveSettingsDebounced() { settingsSaves++; }, getRequestHeaders: () => ({}),
         event_types: { CHAT_COMPLETION_SETTINGS_READY: 'settings_ready' },
         eventSource: { on: (...args) => events.push(['on', ...args]), makeLast: (...args) => events.push(['last', ...args]) },
+        createRewriteController: () => ({ enable() {}, disable() {}, refresh() {} }),
+        rewriteDiagnosticMetadata: () => ({ phase: 'initial' }),
+        REWRITE_REQUEST: Symbol('rewrite'), applyRewriteMetadata() {},
         console: { log() {}, error() {}, warn() {} }, structuredClone,
         localStorage: { removeItem: key => removed.push(key) },
         document: { body: { appendChild() {} }, getElementById() { return node; }, addEventListener() {} },
@@ -52,6 +55,9 @@ function setup({ failImport = false, failDispose = false } = {}) {
     };
     vm.createContext(context);
     vm.runInContext(executable, context, { timeout: 1000 });
+    store.selectedConnectionId = 'draft';
+    store.connections.push({ id: 'draft', name: 'draft', format: 'openai', endpoint: 'https://provider.invalid/v1',
+        apiKey: 'dummy-not-a-real-key', model: 'claude-opus-4-5' });
     return { context, ready: initialization, events, fields, store, removed,
         get callbacks() { return callbacks; }, get disposed() { return disposed; }, get settingsSaves() { return settingsSaves; } };
 }
@@ -80,6 +86,7 @@ test('actual entry loads diagnostics after chat hooks; only matching ConnexHub r
     f.context.main_api = 'openai';
     f.fields['#cxh_format'] = 'claude';
     f.fields['#cxh_endpoint'] = 'https://provider.invalid/v1';
+    f.store.connections[0].format = 'claude';
     assert.equal(f.callbacks.shouldRecord({ chat_completion_source: 'claude', reverse_proxy: 'https://provider.invalid/v1' }), true);
     assert.equal(f.callbacks.getSecrets()[0], 'dummy-not-a-real-key');
     await f.context.cleanupPluginData();

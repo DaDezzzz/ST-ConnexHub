@@ -125,6 +125,23 @@
             </div>
         </div>
 
+        <details id="cxh_rewrite" class="cxh-card">
+            <summary><i class="fa-solid fa-pen-nib"></i> 自动重写</summary>
+            <label class="cxh-diagnostics-switch"><input id="cxh_rewrite_auto" type="checkbox" /> 首轮完成后自动重写一次</label>
+            <label class="cxh-label">重写连接（首轮始终使用上方当前连接）</label>
+            <select id="cxh_rewrite_connection" class="text_pole"><option value="">与首轮相同</option></select>
+            <label class="cxh-label">重写模型（留空使用连接保存的模型）</label>
+            <input id="cxh_rewrite_model" class="text_pole" autocomplete="off" placeholder="可填写另一个模型" />
+            <label class="cxh-diagnostics-switch" title="仅使用 MVU 变量系统的角色卡需要开启"><input id="cxh_rewrite_mvu" type="checkbox" /> 兼容 MVU 变量（按需开启）</label>
+            <label class="cxh-label">基础审校规则（可修改）</label>
+            <textarea id="cxh_rewrite_base" class="text_pole textarea_compact" rows="9"></textarea>
+            <label class="cxh-label">额外修改意见（可选）</label>
+            <textarea id="cxh_rewrite_feedback" class="text_pole textarea_compact" rows="3" placeholder="例如：减少心理独白，让情绪更多通过动作体现"></textarea>
+            <small id="cxh_rewrite_route_hint" class="cxh-hint"></small>
+            <small class="cxh-hint">每次重写多发一次请求。原稿保留为旧 Swipe；停止、失败和聊天切换按事务恢复。仅支持单角色聊天。</small>
+            <small id="cxh_rewrite_status" class="cxh-hint" role="status"></small>
+        </details>
+
         <details id="cxh_diagnostics" class="cxh-card cxh-diagnostics">
             <summary>连接诊断（输出中断排查）</summary>
             <label class="cxh-diagnostics-switch">
