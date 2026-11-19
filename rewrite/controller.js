@@ -4,7 +4,7 @@ import { SWIPE_STATE } from '../../../../constants.js';
 import { hasPendingFileAttachment } from '../../../../chats.js';
 import { getRegexedString, regex_placement } from '../../../regex/engine.js';
 import { createRewriteUI } from './ui.js';
-import { resolveRewriteConnection } from './routing.js';
+import { resolveManualRewriteConnection } from './routing.js';
 import { createBackgroundScheduler, disposeBackgroundDelays } from './background-scheduler.js';
 import { mvuBusy, mvuFeedback, prepareMvu, resetMvuFeedback, finishMvu, syncMvuChat, waitMvuWindow } from './mvu-compat.js';
 import { canRewriteInplace, prepareInplace, generateInplace, commitInplace, restoreInplace,
@@ -54,7 +54,10 @@ function rewriteBlocker(ctx = getContext()) {
     if (stream?.isFinished || stream?.isFinalizing || stream?.isStopped) return '正在完成回复收尾';
     if (core.is_send_press || stream) return '正在生成回复';
     if (core.swipeState === SWIPE_STATE.SWIPING) return '正在切换回复版本';
+    // This ST version does not assign SWIPE_STATE.EDITING. Native messageEdit
+    // hides the normal buttons and shows the edit controls instead.
     if (core.swipeState === SWIPE_STATE.EDITING
+        || document.querySelector('#chat .mes_edit_buttons:not([style*="display: none"])')
         || document.querySelector('#chat :is(.edit_textarea, .reasoning_edit_textarea, .mes_edit_textarea)')) return '正在编辑消息';
     if (settings().mvu && mvuBusy()) return '正在解析 MVU 变量';
     return '';
@@ -232,7 +235,7 @@ async function rewrite(attempt, automatic = true, notice = null) {
 
     let route;
     try {
-        route = deps.beginRoute(resolveRewriteConnection(settings(), deps.getConnections(), deps.getMainConnectionId()));
+        route = deps.beginRoute(resolveManualRewriteConnection(deps.getConnections(), deps.getMainConnectionId(), settings()));
     } catch (error) {
         notice?.finish(false);
         setStatus(error.message);
@@ -251,6 +254,7 @@ async function rewrite(attempt, automatic = true, notice = null) {
         timing: { startedAt: automatic && Number.isFinite(firstStarted) ? Math.min(firstStarted, now) : now, rewriteStartedAt: now },
     };
     running = job;
+    job.phase = 'prepare';
     setStatus('正在准备重写');
     try {
         if (settings().mvu) prepareMvu(job);
@@ -279,6 +283,7 @@ async function rewrite(attempt, automatic = true, notice = null) {
             if (composerBusy()) throw new Error('输入框中出现了新草稿或附件，本次重写已停止');
         }
         job.networkLabelAtStart = document.querySelector('#generation_network_status > [role="status"]');
+        job.phase = 'request';
         job.generating = true;
         setStatus(`${automatic ? '正在自动重写' : '正在重写'} · ${job.route.label}`);
         deps.recordDiagnostic({ rewriteId: job.id, outcome: 'pending', connectionName: route.conn.name, model: route.model });
@@ -295,6 +300,7 @@ async function rewrite(attempt, automatic = true, notice = null) {
         if (!sameJob(job)) throw new Error('重写已取消或聊天已变化');
         if (!last || (!job.inplace && last === job.source) || last.is_user || last.is_system
             || !last.mes?.trim() || last.mes.trim() === '...') throw new Error('未收到可用的重写正文');
+        job.phase = 'commit';
         if (!job.stopRequested) setStatus(job.mvu ? '正在整理重写稿的 MVU 变量' : '正在保存重写稿');
         await finishMvu(job, last, () => sameJob(job) && (job.inplace ? ownsInplace(job)
             : job.stopRequested ? ownsTail(job) : getContext().chat.at(-1) === last));
@@ -309,6 +315,7 @@ async function rewrite(attempt, automatic = true, notice = null) {
         setStatus(job.stopRequested ? '已停止，当前重写稿已保留，原稿仍在上一版' : '重写已完成，原稿已保存为上一版');
         if (job.mvuPending) globalThis.toastr?.info('重写稿已保留；变量尚未解析完成，暂沿用本轮初始状态，请在正文完整后重新解析变量。');
     } catch (error) {
+        console.error(`[ConnexHub rewrite] ${job.phase || 'unknown'} failed`, error);
         job.timing.finishedAt ??= Date.now();
         if (!job.settled && job.stopRequested && job.stoppedDraft && sameJob(job)) {
             setStatus('已停止，重写稿已保留，收尾未完成；请保留正文并刷新恢复');
@@ -325,10 +332,10 @@ async function rewrite(attempt, automatic = true, notice = null) {
             setStatus('回复版本已保留，保存或界面更新未完成');
             globalThis.toastr?.warning(status);
         }
-        if (!job.cancelled) console.error('[ConnexHub rewrite]', error);
         deps.recordDiagnostic({
-            rewriteId: job.id, outcome: job.cancelled ? 'cancelled' : 'failed', error: error.message,
-            connectionName: route.conn.name, model: route.model,
+            rewriteId: job.id, outcome: job.cancelled ? 'cancelled' : 'failed',
+            error: `[${job.phase || 'unknown'}] ${error?.message || String(error)}`,
+            connectionName: route.conn?.name || '(未命名)', model: route.model,
         });
     } finally {
         clearInplacePrompts(job);

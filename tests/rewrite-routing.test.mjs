@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveRewriteConnection, applyRewriteMetadata, rewriteDiagnosticMetadata, REWRITE_REQUEST } from '../rewrite/routing.js';
+import { resolveRewriteConnection, resolveManualRewriteConnection, applyRewriteMetadata, rewriteDiagnosticMetadata, REWRITE_REQUEST } from '../rewrite/routing.js';
 import { safeRewriteError } from '../rewrite/diagnostics-log.js';
 
 const sources = { CUSTOM: 'custom', CLAUDE: 'claude' };
@@ -21,6 +21,18 @@ test('second connection and model override are frozen', () => {
     const route = resolveRewriteConnection({ connectionId: 'b', model: 'rewrite-model' }, connections, 'a');
     assert.equal(route.conn.id, 'b');
     assert.equal(route.model, 'rewrite-model');
+});
+
+test('manual pen follows the second connection and its model', () => {
+    const route = resolveManualRewriteConnection(connections, 'a', { connectionId: 'b', model: 'rewrite-model' });
+    assert.equal(route.conn.id, 'b');
+    assert.equal(route.model, 'rewrite-model');
+});
+
+test('manual pen falls back to the current connection when no second connection is selected', () => {
+    const route = resolveManualRewriteConnection(connections, 'a', { connectionId: '', model: '' });
+    assert.equal(route.conn.id, 'a');
+    assert.equal(route.model, 'model-a');
 });
 
 test('cross protocol routing clears first request credentials and transport fields', () => {

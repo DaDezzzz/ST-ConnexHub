@@ -13,6 +13,14 @@ export function resolveRewriteConnection(setting, connections, mainId) {
     return { conn: structuredClone(conn), model: String(setting?.model || '').trim() || String(conn.model || '').trim() };
 }
 
+// Manual and automatic rewriting share the same optional second API route.
+// Resolve it here so the transaction can freeze the selected connection and model.
+export function resolveManualRewriteConnection(connections, mainId, settings = {}) {
+    // The optional second connection is the explicit rewrite target for both
+    // automatic and manual runs. An empty selection means the current connection.
+    return resolveRewriteConnection(settings, connections, mainId);
+}
+
 export function applyRewriteMetadata(body, conn, model, sources) {
     body.chat_completion_source = nativeSource(conn, sources);
     body.model = model;

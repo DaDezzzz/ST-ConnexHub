@@ -65,6 +65,10 @@ export async function prepareInplace(job, feedback) {
     job.targetSwipe = source.swipes.length;
     source.extra ??= {};
     source.extra[TRANSACTION] = { id: job.id, index: job.index, original: clone(job.original) };
+    // Native saveReply increments swipes.length for a swipe generation. Do not
+    // pre-create an empty slot: it shifts the generated text to the next index
+    // and makes the native endSwipe clamp back to the old swipe.
+    source.swipe_id = source.swipes.length - 1;
     // Preserve the old swipe's MVU snapshot; native receive listeners will write
     // the rewritten state into the new slot using the prepared chat baseline.
     if (job.mvu && job.original.variables?.[job.attempt.swipeId]) {
@@ -76,12 +80,30 @@ export async function prepareInplace(job, feedback) {
 
 export async function generateInplace(job) {
     job.awaitingNativeSwipe = true;
-    // Use the arrow handler itself: it owns the new slot, busy state, streaming,
-    // stop button and ordinary receive/swipe events on the existing message ID.
-    await getContext().swipe.to(null, SWIPE_DIRECTION.RIGHT,
-        { source: SWIPE_SOURCE.SWIPE_PICKER, forceMesId: job.index,
-            forceSwipeId: job.targetSwipe, forceDuration: 0 });
+    // Core swipe stringifies generation errors into a warning and then swallows
+    // them. Preserve that message; the original exception and stack are not
+    // exposed to extensions, so the stack below only identifies this adapter.
+    const warn = console.warn;
+    const capture = (...args) => {
+        if (typeof args[0] === 'string' && args[0].startsWith('Swipe failed, Swiping back.')) {
+            const error = args[1];
+            job.nativeError = error instanceof Error ? error : new Error(args[0]
+                .replace(/^Swipe failed, Swiping back\.\s*/, '') || '原生重写失败');
+        }
+        return warn.apply(console, args);
+    };
+    console.warn = capture;
+    try {
+        // Use the arrow handler itself: it owns the new slot, busy state, streaming,
+        // stop button and ordinary receive/swipe events on the existing message ID.
+        await getContext().swipe.to(null, SWIPE_DIRECTION.RIGHT,
+            { source: SWIPE_SOURCE.SWIPE_PICKER, forceMesId: job.index,
+                forceDuration: 0 });
+    } finally {
+        if (console.warn === capture) console.warn = warn;
+    }
     job.awaitingNativeSwipe = false;
+    if (job.nativeError) throw job.nativeError;
     if (!job.nativeStarted || !ownsInplace(job)) throw new Error('原楼重写未开始或聊天已变化；请确认末页右箭头设为生成新版本');
     const result = getInplaceReply(job);
     if (result) return result;
@@ -163,12 +185,16 @@ export async function restoreInplace(job) {
     clearInplacePrompts(job);
     const ctx = getContext();
     if (keyOf(ctx) !== job.key || ctx.chat[job.index] !== job.source) return false;
-    if (!job.source.extra?.[TRANSACTION] && job.mvu) {
-        restoreMvu(job);
-        await ctx.saveChat();
-        return true;
+    const transaction = job.source.extra?.[TRANSACTION];
+    if (transaction && transaction.id !== job.id) return false;
+    // A native no-op swipe can close the editor before GENERATION_STARTED.
+    // Once generation began, a missing marker means ownership is uncertain.
+    // Redraw the current object rather than overwriting another listener's edit.
+    if (!transaction && job.nativeStarted) {
+        ctx.addOneMessage(job.source, { type: 'swipe', forceId: job.index, scroll: false });
+        await ctx.eventSource.emit(ctx.eventTypes.MESSAGE_UPDATED, job.index);
+        return false;
     }
-    if (job.source.extra?.[TRANSACTION]?.id !== job.id) return false;
     const owned = ownsInplace(job);
     restoreMvu(job, { restoreChat: owned });
     const original = clone(job.original);
@@ -177,8 +203,11 @@ export async function restoreInplace(job) {
     if (owned && !job.recovering) ctx.chat.splice(job.index + 1);
     job.settled = true;
     ctx.addOneMessage(job.source, { type: 'swipe', forceId: job.index, scroll: false });
+    // Native swipe closes the editor before generating. Notify renderers after
+    // restoring the original object so no temporary/edit state remains visible.
+    await ctx.eventSource.emit(ctx.eventTypes.MESSAGE_UPDATED, job.index);
     await ctx.saveChat();
-    return owned;
+    return true;
 }
 
 export async function recoverInplace() {

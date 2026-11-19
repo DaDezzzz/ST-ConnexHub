@@ -1,5 +1,5 @@
 export function createRewriteUI({ getSettings, getView, getConnections, getActiveConnection,
-    defaultFeedback, onSettings, onAuto, onRewrite, onJump, onVersions, onMutation }) {
+    defaultFeedback, onSettings, onRewrite, onJump, onVersions, onMutation }) {
     let bar, observer, frame, clock, shown;
     let disposed = false;
     const refresh = () => {
@@ -9,6 +9,7 @@ export function createRewriteUI({ getSettings, getView, getConnections, getActiv
     const sync = () => {
         const settings = getSettings();
         const select = document.getElementById('cxh_rewrite_connection');
+        const selectedBefore = select?.value;
         if (select) {
             const current = select.value;
             select.replaceChildren(new Option('与首轮相同', ''),
@@ -17,6 +18,7 @@ export function createRewriteUI({ getSettings, getView, getConnections, getActiv
             select.value = saved ? settings.connectionId : '';
             if (!select.value && current && !settings.connectionId
                 && getConnections().some(conn => conn.id === current)) select.value = current;
+            if (selectedBefore !== select.value) select.dispatchEvent(new Event('change', { bubbles: true }));
         }
         const model = document.getElementById('cxh_rewrite_model');
         if (model && document.activeElement !== model) model.value = settings.model;
@@ -42,13 +44,12 @@ export function createRewriteUI({ getSettings, getView, getConnections, getActiv
     function makeBar() {
         const root = document.createElement('div');
         root.className = 'cxh-rewrite-bar';
-        root.innerHTML = `<button type="button" class="menu_button" data-rewrite><i class="fa-solid fa-pen-nib"></i> 重写正文</button>
-            <button type="button" class="menu_button" data-jump><i class="fa-solid fa-clock-rotate-left"></i> <span>查看原稿</span></button>
-            <label title="首轮完成后自动重写一次"><input type="checkbox" data-auto> 自动</label><span data-caption role="status"></span>`;
+        root.innerHTML = `<button type="button" class="menu_button menu_button_icon" data-rewrite aria-label="重写正文"><i class="fa-solid fa-pen-nib"></i></button>
+            <button type="button" class="menu_button menu_button_icon" data-jump aria-label="查看原稿"><i class="fa-solid fa-clock-rotate-left"></i></button>
+            <span data-caption class="cxh-rewrite-sr-only" role="status"></span>`;
         root.querySelector('[data-rewrite]').addEventListener('click', () => onRewrite(shown?.reply));
         root.querySelector('[data-jump]').addEventListener('click', () => shown?.busy
             ? void onVersions() : onJump(shown?.reply, shown?.link?.target));
-        root.querySelector('[data-auto]').addEventListener('change', event => onAuto(event.target.checked));
         return root;
     }
     function render() {
@@ -56,20 +57,22 @@ export function createRewriteUI({ getSettings, getView, getConnections, getActiv
         const view = shown = getView();
         sync();
         const host = view.reply && document.querySelector(`#chat > .mes[mesid="${view.reply.index}"]`);
-        if (bar?.parentElement && bar.parentElement !== host) bar.remove();
-        if (!host) { clearInterval(clock); clock = null; return; }
+        const buttons = host?.querySelector(':scope > .mes_block .mes_buttons');
+        if (bar?.parentElement && bar.parentElement !== buttons) bar.remove();
+        if (!host || !buttons) { clearInterval(clock); clock = null; return; }
         if (!bar) bar = makeBar();
-        if (bar.parentElement !== host) host.append(bar);
+        if (bar.parentElement !== buttons) buttons.append(bar);
         const rewrite = bar.querySelector('[data-rewrite]');
         rewrite.hidden = view.busy;
         rewrite.disabled = !view.idle || view.composerBusy;
         rewrite.title = view.blocker
-            || (view.composerBusy ? '请先发送或清空输入框草稿与附件' : '按当前重写设置生成一个新版本');
+            || (view.composerBusy ? '请先发送或清空输入框草稿与附件' : '使用重写连接生成新版本；未配置重写连接时使用当前连接');
+        rewrite.setAttribute('aria-label', rewrite.title);
         const jump = bar.querySelector('[data-jump]');
         jump.hidden = view.busy ? !view.canBrowse : !view.link;
         jump.disabled = !view.busy && !view.idle;
-        jump.querySelector('span').textContent = view.busy ? '版本' : view.link?.label || '查看原稿';
-        bar.querySelector('[data-auto]').checked = getSettings().auto;
+        jump.title = view.busy ? '查看重写版本' : view.link?.label || '查看原稿';
+        jump.setAttribute('aria-label', jump.title);
         const caption = view.busy ? view.status
             : view.blocker || (view.link?.original ? '原稿' : view.link ? '重写稿' : '');
         bar.querySelector('[data-caption]').textContent = caption;

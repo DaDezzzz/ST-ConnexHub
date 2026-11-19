@@ -86,7 +86,7 @@ const DEFAULT_SETTINGS = {
     connections: [],
     /** 首次安装已初始化标志 */
     initialized: false,
-    rewrite: { auto: false, connectionId: '', model: '', mvu: false, baseFeedback: '', feedback: '' },
+    rewrite: { auto: false, connectionId: '', model: '', availableModels: [], modelCache: {}, mvu: false, baseFeedback: '', feedback: '' },
 };
 
 const DEFAULT_CONNECTION = () => ({
@@ -133,6 +133,8 @@ function getRewriteSettings() {
         if (typeof value[key] !== 'string') value[key] = '';
     }
     if (typeof value.mvu !== 'boolean') value.mvu = false;
+    if (!Array.isArray(value.availableModels)) value.availableModels = [];
+    if (!value.modelCache || typeof value.modelCache !== 'object' || Array.isArray(value.modelCache)) value.modelCache = {};
     return value;
 }
 
@@ -298,12 +300,28 @@ function beginRewriteRoute(route) {
     const id = globalThis.crypto?.randomUUID?.() || `${Date.now()}-${Math.random()}`;
     rewriteRequests.set(id, route);
     armedRewriteId = id;
+    // Prompt assembly must use the same protocol as the request-level route.
+    // Only borrow the source/model slots; the active writing preset stays intact.
+    const targetSource = route.conn.format === 'claude' ? chat_completion_sources.CLAUDE : chat_completion_sources.CUSTOM;
+    const previous = { source: oai_settings.chat_completion_source, model: oai_settings[`${targetSource}_model`] };
+    const changed = previous.source !== targetSource || (route.model && previous.model !== route.model);
+    oai_settings.chat_completion_source = targetSource;
+    if (route.model) oai_settings[`${targetSource}_model`] = route.model;
+    let released = false;
     return {
         id,
         label: `${route.conn.name || '(未命名)'} / ${route.model}`,
         release() {
+            if (released) return;
+            released = true;
             rewriteRequests.delete(id);
             if (armedRewriteId === id) armedRewriteId = null;
+            if (changed) {
+                if (oai_settings.chat_completion_source === targetSource) oai_settings.chat_completion_source = previous.source;
+                if (oai_settings[`${targetSource}_model`] === route.model) {
+                    oai_settings[`${targetSource}_model`] = previous.model;
+                }
+            }
         },
     };
 }
@@ -651,6 +669,86 @@ function selectActiveModel() {
     return true;
 }
 
+// 重写模型下拉与主连接隔离：只更新重写设置，不修改连接草稿或已保存模型。
+let rewriteModelMatches = [];
+let rewriteModelActiveIndex = -1;
+let rewriteModelCacheKey = '';
+
+function rewriteModelConnection() {
+    const settings = getRewriteSettings();
+    return getConn(settings.connectionId || getStore().selectedConnectionId);
+}
+
+function syncRewriteModelCache() {
+    const settings = getRewriteSettings();
+    const key = rewriteModelConnection()?.id || '';
+    if (key === rewriteModelCacheKey) return;
+    rewriteModelCacheKey = key;
+    settings.availableModels = key && Array.isArray(settings.modelCache[key]) ? settings.modelCache[key] : [];
+    $('#cxh_rewrite_model_dropdown').hide();
+    renderRewriteModelMatches('');
+}
+
+function renderRewriteModelMatches(keyword = '') {
+    const settings = getRewriteSettings();
+    const dropdown = document.getElementById('cxh_rewrite_model_dropdown');
+    if (!dropdown || typeof document.createDocumentFragment !== 'function') return;
+    const tokens = String(keyword || '').trim().toLowerCase().split(/\s+/).filter(Boolean);
+    rewriteModelMatches = settings.availableModels.filter(model => tokens.every(token => String(model?.id || '').toLowerCase().includes(token)));
+    rewriteModelActiveIndex = rewriteModelMatches.length ? 0 : -1;
+    const fragment = document.createDocumentFragment();
+    if (!settings.availableModels.length || !rewriteModelMatches.length) {
+        const empty = document.createElement('div');
+        empty.className = 'cxh-dd-empty';
+        empty.textContent = settings.availableModels.length ? '没有匹配的模型，可继续手动输入' : '（尚未拉取模型，点「连接」）';
+        fragment.appendChild(empty);
+    } else {
+        for (const [index, model] of rewriteModelMatches.slice(0, MODEL_RENDER_LIMIT).entries()) {
+            const item = document.createElement('div');
+            item.className = `cxh-dd-item${index === rewriteModelActiveIndex ? ' cxh-dd-item-active' : ''}`;
+            item.dataset.cxhRewriteModel = String(model.id);
+            item.dataset.cxhIndex = String(index);
+            item.title = String(model.id);
+            const label = document.createElement('span');
+            label.textContent = String(model.id);
+            item.appendChild(label);
+            fragment.appendChild(item);
+        }
+        if (rewriteModelMatches.length > MODEL_RENDER_LIMIT) {
+            const more = document.createElement('div');
+            more.className = 'cxh-dd-empty';
+            more.textContent = `另有 ${rewriteModelMatches.length - MODEL_RENDER_LIMIT} 个结果，请继续输入筛选`;
+            fragment.appendChild(more);
+        }
+    }
+    $(dropdown).empty().append(fragment);
+}
+
+function positionRewriteModelDropdown() {
+    const dropdown = document.getElementById('cxh_rewrite_model_dropdown');
+    const wrap = document.getElementById('cxh_rewrite_model_wrap');
+    if (!dropdown || !wrap) return;
+    const rect = wrap.getBoundingClientRect();
+    const padding = 8;
+    const below = window.innerHeight - rect.bottom - padding;
+    const above = rect.top - padding;
+    const useBelow = below >= 220 || below >= above;
+    dropdown.style.left = `${Math.max(padding, Math.min(rect.left, window.innerWidth - rect.width - padding))}px`;
+    dropdown.style.width = `${rect.width}px`;
+    dropdown.style.maxHeight = `${Math.max(100, useBelow ? below : above)}px`;
+    dropdown.style.top = useBelow ? `${rect.bottom + 4}px` : `${Math.max(padding, rect.top - 4 - Math.min(320, above))}px`;
+}
+
+function selectRewriteModel(index = rewriteModelActiveIndex) {
+    const model = rewriteModelMatches[index];
+    if (!model) return false;
+    $('#cxh_rewrite_model').val(String(model.id));
+    getRewriteSettings().model = String(model.id);
+    saveSettingsDebounced();
+    $('#cxh_rewrite_model_dropdown').hide();
+    return true;
+}
+
 function updateEndpointHint(conn) {
     // 按用户要求：不展示接口后缀/实际请求提示，保持界面干净
     $('#cxh_endpoint_hint').text('');
@@ -833,6 +931,7 @@ function bindEvents() {
     $(document).on('change.cxh', '#cxh_rewrite_auto, #cxh_rewrite_mvu, #cxh_rewrite_connection', function () {
         const key = this.id === 'cxh_rewrite_auto' ? 'auto' : this.id === 'cxh_rewrite_mvu' ? 'mvu' : 'connectionId';
         getRewriteSettings()[key] = this.type === 'checkbox' ? this.checked : this.value;
+        if (key === 'connectionId') syncRewriteModelCache();
         saveSettingsDebounced();
         rewriteController?.refresh();
     });
@@ -840,6 +939,69 @@ function bindEvents() {
         const key = this.id === 'cxh_rewrite_model' ? 'model' : this.id === 'cxh_rewrite_base' ? 'baseFeedback' : 'feedback';
         getRewriteSettings()[key] = this.value;
         saveSettingsDebounced();
+    });
+    $(document).on('focusout.cxh', '#cxh_rewrite_model', function () {
+        getRewriteSettings().model = String($(this).val() || '').trim();
+        saveSettingsDebounced();
+    });
+    $(document).on('input.cxh', '#cxh_rewrite_model', function () {
+        renderRewriteModelMatches($(this).val());
+        $('#cxh_rewrite_model_dropdown').show();
+        positionRewriteModelDropdown();
+    });
+    $(document).on('click.cxh', '#cxh_rewrite_model_arrow', function (event) {
+        event.stopPropagation();
+        const dropdown = $('#cxh_rewrite_model_dropdown');
+        if (dropdown.is(':visible')) { dropdown.hide(); return; }
+        syncRewriteModelCache();
+        renderRewriteModelMatches('');
+        dropdown.show();
+        positionRewriteModelDropdown();
+    });
+    $(document).on('keydown.cxh', '#cxh_rewrite_model, #cxh_rewrite_model_arrow, #cxh_rewrite_fetch_models', function (event) {
+        if ((this.id !== 'cxh_rewrite_model') && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault();
+            $(this).trigger('click');
+            return;
+        }
+        if (this.id !== 'cxh_rewrite_model') return;
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+            event.preventDefault();
+            if (!$('#cxh_rewrite_model_dropdown').is(':visible')) renderRewriteModelMatches('');
+            rewriteModelActiveIndex = Math.max(0, Math.min(rewriteModelMatches.length - 1,
+                rewriteModelActiveIndex + (event.key === 'ArrowDown' ? 1 : -1)));
+            $('#cxh_rewrite_model_dropdown').show();
+            const items = document.querySelectorAll('#cxh_rewrite_model_dropdown .cxh-dd-item');
+            items.forEach((item, index) => item.classList.toggle('cxh-dd-item-active', index === rewriteModelActiveIndex));
+            items[rewriteModelActiveIndex]?.scrollIntoView({ block: 'nearest' });
+            positionRewriteModelDropdown();
+        } else if (event.key === 'Enter' && $('#cxh_rewrite_model_dropdown').is(':visible')) {
+            event.preventDefault();
+            selectRewriteModel();
+        } else if (event.key === 'Escape') {
+            $('#cxh_rewrite_model_dropdown').hide();
+        }
+    });
+    $(document).on('click.cxh', '#cxh_rewrite_fetch_models', async function () {
+        const conn = rewriteModelConnection();
+        if (!conn) { $('#cxh_rewrite_model_status').text('请先选择并保存一个连接'); return; }
+        const icon = $(this).find('i');
+        icon.addClass('fa-spin');
+        $('#cxh_rewrite_model_status').text(`正在从 ${conn.name || '(未命名)'} 获取模型…`);
+        try {
+            const models = await fetchModels(conn);
+            const settings = getRewriteSettings();
+            settings.availableModels = models;
+            settings.modelCache[conn.id] = models;
+            rewriteModelCacheKey = conn.id;
+            renderRewriteModelMatches('');
+            saveSettingsDebounced();
+            $('#cxh_rewrite_model_status').text(`已获取 ${models.length} 个模型`);
+            $('#cxh_rewrite_model_dropdown').show();
+            positionRewriteModelDropdown();
+        } catch (error) {
+            $('#cxh_rewrite_model_status').text(`获取失败：${error.message || error}`);
+        } finally { icon.removeClass('fa-spin'); }
     });
     // 状态条展开/收起（委托绑定，DOM 重建后依然有效）
     $(document).on('click.cxh', '#cxh_status .cxh-status-toggle', function (e) {
@@ -979,6 +1141,20 @@ function bindEvents() {
         });
         ddEl.dataset.cxhStopBound = '1';
     }
+    const rewriteDdEl = document.getElementById('cxh_rewrite_model_dropdown');
+    if (rewriteDdEl && rewriteDdEl.parentElement !== document.body) document.body.appendChild(rewriteDdEl);
+    if (rewriteDdEl && !rewriteDdEl.dataset.cxhStopBound) {
+        for (const event of ['mousedown', 'click', 'touchstart', 'pointerdown']) {
+            rewriteDdEl.addEventListener(event, event => event.stopPropagation());
+        }
+        rewriteDdEl.addEventListener('mousedown', event => {
+            const item = event.target.closest('[data-cxh-rewrite-model]');
+            if (!item) return;
+            event.preventDefault();
+            selectRewriteModel(Number(item.dataset.cxhIndex));
+        });
+        rewriteDdEl.dataset.cxhStopBound = '1';
+    }
 
     /**
      * 定位策略（完整可见优先级最高）：
@@ -1053,11 +1229,14 @@ function bindEvents() {
     // 点击面板外任意处收起（下拉已挂 body，需同时排除下拉自身）；滚动/窗口变化时收起
     $(document).on('click.cxh-dd', function (e) {
         if (!$(e.target).closest('.cxh-model-wrap, #cxh_model_dropdown, #cxh_model_arrow').length) $('#cxh_model_dropdown').hide();
+        if (!$(e.target).closest('#cxh_rewrite_model_wrap, #cxh_rewrite_model_dropdown, #cxh_rewrite_model_arrow').length) $('#cxh_rewrite_model_dropdown').hide();
     });
-    $(window).on('resize.cxh-dd', () => $('#cxh_model_dropdown').hide());
+    $(window).on('resize.cxh-dd', () => $('#cxh_model_dropdown, #cxh_rewrite_model_dropdown').hide());
     document.addEventListener('scroll', (e) => {
         const dd = document.getElementById('cxh_model_dropdown');
         if (dd && dd.style.display !== 'none' && !dd.contains(e.target)) dd.style.display = 'none';
+        const rewriteDd = document.getElementById('cxh_rewrite_model_dropdown');
+        if (rewriteDd && rewriteDd.style.display !== 'none' && !rewriteDd.contains(e.target)) rewriteDd.style.display = 'none';
     }, true);
     $(document).on('click.cxh', '#cxh_btn_test', async function () {
         const conn = draftConn();
@@ -1148,6 +1327,7 @@ jQuery(async () => {
     const initial = getSelectedConn() || getConn($('#cxh_conn_select').val());
     fillEditor(initial);
     bindEvents();
+    syncRewriteModelCache();
     // 启动时若已有选中连接，静默同步原生 source
     if (getStore().viewMode === 'cxh' && initial) syncSourceForConn(initial.id);
 

@@ -107,6 +107,24 @@ test('a failed diagnostics module does not prevent original generation hooks or 
     assert.equal(f.settingsSaves, 1);
 });
 
+test('rewrite protocol and model are borrowed for prompt assembly and restored afterwards', async () => {
+    const f = setup();
+    await f.ready;
+    f.context.oai_settings.chat_completion_source = 'custom';
+    f.context.oai_settings.custom_model = 'main-model';
+    const route = f.context.beginRewriteRoute({ conn: { name: 'B', format: 'claude' }, model: 'rewrite-model' });
+    assert.equal(f.context.oai_settings.chat_completion_source, 'claude');
+    assert.equal(f.context.oai_settings.claude_model, 'rewrite-model');
+    route.release();
+    assert.equal(f.context.oai_settings.chat_completion_source, 'custom');
+    assert.equal(f.context.oai_settings.claude_model, undefined);
+    route.release();
+    const same = f.context.beginRewriteRoute({ conn: { name: 'A', format: 'openai' }, model: 'rewrite-model' });
+    assert.equal(f.context.oai_settings.custom_model, 'rewrite-model');
+    same.release();
+    assert.equal(f.context.oai_settings.custom_model, 'main-model');
+});
+
 test('diagnostics disposal failure cannot block plugin settings cleanup', async () => {
     const f = setup({ failDispose: true });
     await f.ready;

@@ -131,7 +131,19 @@
             <label class="cxh-label">重写连接（首轮始终使用上方当前连接）</label>
             <select id="cxh_rewrite_connection" class="text_pole"><option value="">与首轮相同</option></select>
             <label class="cxh-label">重写模型（留空使用连接保存的模型）</label>
-            <input id="cxh_rewrite_model" class="text_pole" autocomplete="off" placeholder="可填写另一个模型" />
+            <div class="cxh-row cxh-model-row">
+                <div class="cxh-model-wrap" id="cxh_rewrite_model_wrap">
+                    <input id="cxh_rewrite_model" type="text" class="text_pole cxh-model-input" placeholder="输入模型名，或从列表选择" autocomplete="off" />
+                    <div id="cxh_rewrite_model_dropdown" class="cxh-model-dropdown" style="display:none;"></div>
+                </div>
+                <div id="cxh_rewrite_model_arrow" class="menu_button menu_button_icon cxh-btn-arrow" title="展开重写模型列表" role="button" tabindex="0" aria-label="展开重写模型列表">
+                    <i class="fa-solid fa-chevron-down"></i>
+                </div>
+                <div id="cxh_rewrite_fetch_models" class="menu_button cxh-btn-fetch" title="使用当前选择的重写连接获取模型列表" role="button" tabindex="0">
+                    <i class="fa-solid fa-rotate"></i> 连接
+                </div>
+            </div>
+            <small id="cxh_rewrite_model_status" class="cxh-hint" role="status"></small>
             <label class="cxh-diagnostics-switch" title="仅使用 MVU 变量系统的角色卡需要开启"><input id="cxh_rewrite_mvu" type="checkbox" /> 兼容 MVU 变量（按需开启）</label>
             <label class="cxh-label">基础审校规则（可修改）</label>
             <textarea id="cxh_rewrite_base" class="text_pole textarea_compact" rows="9"></textarea>
